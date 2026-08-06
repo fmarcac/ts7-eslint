@@ -111,6 +111,64 @@ for (let i = 0; i < WARM; i++) {
 }
 console.log(`\n${WARM} warm type queries: ${((performance.now() - t) / WARM).toFixed(3)} ms each`);
 
+// ---- getAwaitedType -------------------------------------------------------
+//
+// Reimplemented rather than bridged: it is missing from TypeScript 7.0 and from the 7.1
+// development builds alike. Running without throwing proves nothing here, so each case
+// checks the type that comes back.
+
+console.log("\ngetAwaitedType:");
+
+const awaitedDir = mkdtempSync(join(tmpdir(), "tseslint7-awaited-"));
+const awaitedConfig = join(awaitedDir, "tsconfig.json");
+const awaitedFile = join(awaitedDir, "a.ts");
+
+writeFileSync(awaitedConfig, JSON.stringify({
+  compilerOptions: { lib: ["esnext"], module: "esnext", strict: true, target: "esnext" },
+  files: ["a.ts"],
+}));
+writeFileSync(
+  awaitedFile,
+  `export declare const simple: Promise<number>;
+export declare const nested: Promise<Promise<string>>;
+export declare const thenable: { then(cb: (value: boolean) => void): void };
+export declare const plain: number;
+export declare const unionNoPromise: number | string;
+export declare const anyPromise: Promise<any>;
+`,
+);
+
+const awaitedService = getProgramService({ cwd: awaitedDir, tsconfigPath: awaitedConfig });
+const awaitedSource = awaitedService.getSourceFile(awaitedFile);
+const awaitedChecker = awaitedService.checker;
+
+/** The declared type of a top-level `export declare const <name>`. */
+function declaredType(name) {
+  const identifier = findIdentifier(awaitedSource, name, awaitedSource);
+  return awaitedChecker.getTypeAtLocation(identifier);
+}
+
+function awaitedString(name) {
+  const type = awaitedChecker.getAwaitedType(declaredType(name));
+  return type ? awaitedChecker.typeToString(type) : "undefined";
+}
+
+check("Promise<number> awaits to number", awaitedString("simple"), "number");
+check("Promise<Promise<string>> unwraps fully", awaitedString("nested"), "string");
+check("a hand-written thenable awaits to its value", awaitedString("thenable"), "boolean");
+check("Promise<any> awaits to any", awaitedString("anyPromise"), "any");
+
+// A non-promise is its own awaited type, and callers compare the result by identity, so
+// it has to be the very same object rather than an equal one.
+const plainType = declaredType("plain");
+check("a non-promise awaits to itself", awaitedChecker.getAwaitedType(plainType), plainType);
+const unionType = declaredType("unionNoPromise");
+check(
+  "a union with no promise in it awaits to itself",
+  awaitedChecker.getAwaitedType(unionType),
+  unionType,
+);
+
 clearProgramServices();
 console.log(`\n${failures === 0 ? "ts-api PASS" : `ts-api FAIL (${failures})`}`);
 process.exit(failures === 0 ? 0 : 1);

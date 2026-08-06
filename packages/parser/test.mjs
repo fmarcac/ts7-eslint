@@ -97,6 +97,23 @@ check(
   1,
 );
 
+// no-unsafe-return is the one rule that needs getAwaitedType, which TypeScript 7 does
+// not provide at all, so it is reimplemented. Executing is not evidence: check that it
+// reports, and that it stays quiet when it should.
+check(
+  "no-unsafe-return flags returning any from an async function",
+  run(
+    "no-unsafe-return",
+    `declare const anything: any;\nexport async function unsafe(): Promise<string> {\n  return anything;\n}\n`,
+  ).length,
+  1,
+);
+check(
+  "no-unsafe-return accepts a correctly typed async return",
+  run("no-unsafe-return", `export async function safe(): Promise<string> {\n  return "ok";\n}\n`).length,
+  0,
+);
+
 // Sweep every rule to see how many run end to end. Reported rather than asserted: the
 // remaining failures are the ts-api-utils port, which is still outstanding, and the
 // point of this number is to track it honestly.

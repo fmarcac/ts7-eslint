@@ -16,7 +16,7 @@
 // This is transitional. The 7.1 development builds add most of the Type methods back, so
 // each one is installed only when it is actually missing.
 
-import { SignatureKind } from "typescript/unstable/sync";
+import { SignatureKind, TypeFlags } from "typescript/unstable/sync";
 
 /** Objects already adapted, so repeat crossings are free. */
 const adapted = new WeakSet();
@@ -65,11 +65,11 @@ function defineGetter(target, name, get) {
   Object.defineProperty(target, name, { configurable: true, get });
 }
 
-function installTypeMethods(checker, prototype) {
+function installTypeMethods(prototype) {
   for (const [name, implementation] of Object.entries(TYPE_METHODS)) {
     if (typeof prototype[name] !== "function") {
       define(prototype, name, function (...args) {
-        return implementation(checker, this, ...args);
+        return implementation(currentChecker, this, ...args);
       });
     }
   }
@@ -211,10 +211,10 @@ function adaptSymbol(symbol) {
 
 // ---- Signature -----------------------------------------------------------
 
-function installSignatureMethods(checker, prototype) {
+function installSignatureMethods(prototype) {
   if (typeof prototype.getReturnType !== "function") {
     define(prototype, "getReturnType", function () {
-      return checker.getReturnTypeOfSignature(this);
+      return currentChecker.getReturnTypeOfSignature(this);
     });
   }
   if (typeof prototype.getDeclaration !== "function") {
@@ -244,7 +244,7 @@ function adaptSignature(signature) {
   adapted.add(signature);
 
   if (!signatureMethodsInstalled) {
-    installSignatureMethods(boundChecker, Object.getPrototypeOf(signature));
+    installSignatureMethods(Object.getPrototypeOf(signature));
     signatureMethodsInstalled = true;
   }
 
@@ -253,6 +253,104 @@ function adaptSignature(signature) {
     define(signature, "parameters", signature.getParameters().map(adaptSymbol));
   }
   return signature;
+}
+
+// ---- getAwaitedType ------------------------------------------------------
+//
+// Absent from TypeScript 7.0 *and* from the 7.1 development builds, unlike most of this
+// file, so it is reimplemented rather than waiting for the runtime to supply it.
+//
+// This follows the compiler's own getPromisedTypeOfPromise: read the `then` property,
+// take its first call signature, take that signature's first parameter (the `onfulfilled`
+// callback), and take *its* first parameter. That is the promised type. Awaiting is then
+// applied repeatedly, so `Promise<Promise<T>>` resolves to `T`.
+
+const MAX_AWAIT_DEPTH = 10;
+
+function isFlagSet(type, flags) {
+  return type != null && (type.flags & flags) !== 0;
+}
+
+function firstParameterType(checker, signature) {
+  const parameters = signature.getParameters?.() ?? [];
+  if (parameters.length === 0) {
+    return undefined;
+  }
+  return checker.getParameterType
+    ? checker.getParameterType(signature, 0)
+    : checker.getTypeOfSymbol(parameters[0]);
+}
+
+function getPromisedTypeOfPromise(checker, type) {
+  // `Promise<T>` is by far the common case and the type argument is exact, so take it
+  // directly rather than going round the `then` signature.
+  if (type.isTypeReference?.()) {
+    const name = type.getTarget?.()?.getSymbol?.()?.name ?? type.getSymbol?.()?.name;
+    if (name === "Promise") {
+      const args = checker.getTypeArguments(type);
+      if (args?.length > 0) {
+        return args[0];
+      }
+    }
+  }
+
+  const thenSymbol = checker.getPropertyOfType(type, "then");
+  if (!thenSymbol) {
+    return undefined;
+  }
+  const thenType = checker.getTypeOfSymbol(thenSymbol);
+  if (!thenType || isFlagSet(thenType, TypeFlags.Any)) {
+    return undefined;
+  }
+  const thenSignatures = checker.getSignaturesOfType(thenType, SignatureKind.Call);
+  if (!thenSignatures || thenSignatures.length === 0) {
+    return undefined;
+  }
+
+  // `onfulfilled` is declared as `((value: T) => ...) | null | undefined`, so the
+  // nullable part has to come off before it has call signatures.
+  const onFulfilled = firstParameterType(checker, thenSignatures[0]);
+  if (!onFulfilled || isFlagSet(onFulfilled, TypeFlags.Any)) {
+    return undefined;
+  }
+  const callback = checker.getNonNullableType(onFulfilled) ?? onFulfilled;
+  const callbackSignatures = checker.getSignaturesOfType(callback, SignatureKind.Call);
+  if (!callbackSignatures || callbackSignatures.length === 0) {
+    return undefined;
+  }
+  return firstParameterType(checker, callbackSignatures[0]);
+}
+
+function computeAwaitedType(checker, type, depth = 0) {
+  if (!type || depth >= MAX_AWAIT_DEPTH) {
+    return type;
+  }
+  if (isFlagSet(type, TypeFlags.Any | TypeFlags.Unknown)) {
+    return type;
+  }
+
+  if (type.isUnionType?.()) {
+    const constituents = type.getTypes() ?? [];
+    const awaited = constituents.map((part) => computeAwaitedType(checker, part, depth + 1));
+
+    // Nothing was a promise, so the union is its own awaited type, identity intact.
+    if (awaited.every((part, index) => part === constituents[index])) {
+      return type;
+    }
+    // `any | T` collapses to `any` and `unknown | T` to `unknown`, so when a constituent
+    // awaits to either, that is the answer for the whole union.
+    const absorbing = awaited.find((part) => isFlagSet(part, TypeFlags.Any | TypeFlags.Unknown));
+    if (absorbing) {
+      return absorbing;
+    }
+    // Otherwise the true answer is a union of the awaited constituents, and the API
+    // offers no way to construct one. Returning the original union keeps the callers'
+    // identity comparisons meaningful and never invents a type that does not exist.
+    return type;
+  }
+
+  const promised = getPromisedTypeOfPromise(checker, type);
+  return promised ? computeAwaitedType(checker, promised, depth + 1) : type;
 }
 
 // ---- checker boundary ----------------------------------------------------
@@ -313,9 +411,18 @@ function wrapReturning(checker, names, adapt) {
   }
 }
 
-let installed = false;
-/** The checker the patches are bound to. */
-let boundChecker;
+/**
+ * The checker in play right now.
+ *
+ * Prototype patches are shared by every type object in the process, but each type
+ * belongs to one project checker. ESLint lints one project at a time, so the active
+ * checker is tracked here and read dynamically; capturing one in a closure would make a
+ * second project resolve its types against the first one.
+ */
+let currentChecker;
+let prototypesPatched = false;
+/** Checkers whose own methods have been wrapped. */
+const patchedCheckers = new WeakSet();
 
 /**
  * Patch the compiler's object model in place.
@@ -325,24 +432,31 @@ let boundChecker;
  * program service resets this whenever the snapshot, and therefore the checker, changes.
  */
 export function installTypeCompat(checker) {
-  if (installed) {
+  currentChecker = checker;
+  if (patchedCheckers.has(checker)) {
     return;
   }
-
-  boundChecker = checker;
 
   const sampleType = checker.getAnyType();
   if (!sampleType) {
     return;
   }
-  installTypeMethods(checker, Object.getPrototypeOf(sampleType));
 
-  const sampleSymbol = checker.getPropertyOfType(checker.getStringType(), "length");
-  if (sampleSymbol) {
-    installSymbolMethods(Object.getPrototypeOf(sampleSymbol));
+  if (!prototypesPatched) {
+    installTypeMethods(Object.getPrototypeOf(sampleType));
+    const sampleSymbol = checker.getPropertyOfType(checker.getStringType(), "length");
+    if (sampleSymbol) {
+      installSymbolMethods(Object.getPrototypeOf(sampleSymbol));
+    }
+    prototypesPatched = true;
   }
 
-    wrapReturning(checker, SYMBOL_RETURNING, adaptSymbol);
+    // Absent from 7.0 and 7.1 alike, so it is supplied rather than bridged.
+  if (typeof checker.getAwaitedType !== "function") {
+    define(checker, "getAwaitedType", (type) => adaptType(computeAwaitedType(checker, type)));
+  }
+
+  wrapReturning(checker, SYMBOL_RETURNING, adaptSymbol);
   wrapReturning(checker, SIGNATURE_RETURNING, adaptSignature);
   wrapReturning(checker, TYPE_RETURNING, adaptType);
 
@@ -361,11 +475,10 @@ export function installTypeCompat(checker) {
     define(typePrototype, name, wrapper);
   }
 
-  installed = true;
+  patchedCheckers.add(checker);
 }
 
-/** Test hook, and used when a snapshot change replaces the checker. */
+/** Used when a snapshot change replaces the checker. */
 export function resetTypeCompat() {
-  installed = false;
-  signatureMethodsInstalled = false;
+  currentChecker = undefined;
 }

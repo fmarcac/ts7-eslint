@@ -250,6 +250,21 @@ function adaptType(type) {
     return adaptSymbol(this.getAliasSymbol());
   });
 
+  // TypeScript 6 gave a unique symbol type an `escapedName`, the mangled property name
+  // that a computed key using that symbol produces: `Symbol.asyncIterator` declares
+  // `__@asyncIterator@6`, where 6 is the symbol's id. TypeScript 7 has no such field.
+  //
+  // ts-api-utils compares a property's escapedName against it to decide whether a type
+  // really has a well-known symbol member. With the field absent the comparison is
+  // against undefined, never matches, and await-thenable reports every `for await` over
+  // a genuine async iterable as being over a non-async one.
+  if (isFlagSet(type, TypeFlags.UniqueESSymbol) && !("escapedName" in type)) {
+    defineGetter(type, "escapedName", function () {
+      const symbol = this.symbol;
+      return symbol ? `__@${symbol.escapedName ?? symbol.name}@${symbol.id}` : undefined;
+    });
+  }
+
   // TypeScript 6 exposed a type reference's arguments as a `typeArguments` property as
   // well as through getTypeArguments. TypeScript 7 has only the method, and there is no
   // field to adapt: the property simply is not there.

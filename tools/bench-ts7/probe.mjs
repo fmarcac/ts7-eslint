@@ -1,6 +1,9 @@
-// Dump what the checker answers for one expression, the way a rule would see it.
+// Dump what the checker answers where a rule and the TS 6 stack disagree.
 //
 //   node tools/bench-ts7/probe.mjs <tsconfig> <rootDir> <file>
+//
+// Prints, per `for await` statement, the walk ts-api-utils does to find a type's
+// Symbol.asyncIterator property, which is where await-thenable decides.
 
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
@@ -12,24 +15,11 @@ installResolutionHook();
 const require = createRequire(import.meta.url);
 const { Linter } = await import("eslint");
 const parser = (await import("@tseslint7/parser")).default;
-const plugPath = require.resolve("@typescript-eslint/eslint-plugin");
-const tsutils = createRequire(plugPath)("ts-api-utils");
+const fromPlugin = createRequire(require.resolve("@typescript-eslint/eslint-plugin"));
+const tsutils = fromPlugin("ts-api-utils");
+const ts = fromPlugin("typescript");
 
 const [tsconfigPath, rootDir, file] = process.argv.slice(2);
-
-const describe = (checker, type, label) => {
-  if (!type) {
-    console.log(`${label}: undefined`);
-    return;
-  }
-  console.log(
-    `${label}: ${checker.typeToString(type)}` +
-      ` flags=${type.flags} objectFlags=${type.objectFlags}` +
-      ` isTypeReference=${tsutils.isTypeReference(type)}` +
-      ` aliasTypeArguments=${type.aliasTypeArguments?.length ?? "undefined"}` +
-      ` typeArguments=[${(checker.getTypeArguments(type) ?? []).map((t) => checker.typeToString(t)).join(", ")}]`,
-  );
-};
 
 const plugin = {
   rules: {
@@ -38,11 +28,45 @@ const plugin = {
         const services = context.sourceCode.parserServices;
         const checker = services.program.getTypeChecker();
         return {
-          VariableDeclarator(node) {
-            if (!node.init) return;
-            console.log(`\n${context.filename.split("/").pop()}:${node.loc.start.line}`);
-            describe(checker, services.getTypeAtLocation(node.init), "  sender  ");
-            describe(checker, services.getTypeAtLocation(node.id), "  receiver");
+          ForOfStatement(node) {
+            if (!node.await) {
+              return;
+            }
+            const type = services.getTypeAtLocation(node.right);
+            console.log(`\nfor await at line ${node.loc.start.line}: ${checker.typeToString(type)}`);
+            for (const part of tsutils.unionConstituents(type)) {
+              for (const property of part.getProperties()) {
+                if (!property.name.startsWith("__@asyncIterator")) {
+                  continue;
+                }
+                const declaration = property.valueDeclaration ?? property.getDeclarations()?.[0];
+                console.log(`  property name=${property.name} escapedName=${property.escapedName}`);
+                console.log(
+                  `  declaration kind=${declaration?.kind} computed=${declaration?.name && ts.isComputedPropertyName(declaration.name)}`,
+                );
+                if (!declaration?.name || !ts.isComputedPropertyName(declaration.name)) {
+                  continue;
+                }
+                const globalSymbol = checker.getApparentType(
+                  checker.getTypeAtLocation(declaration.name.expression),
+                ).symbol;
+                console.log(`  globalSymbol=${globalSymbol?.name} id=${globalSymbol?.id}`);
+                const known = globalSymbol
+                  ? checker
+                      .getTypeOfSymbolAtLocation(globalSymbol, globalSymbol.valueDeclaration)
+                      .getProperty("asyncIterator")
+                  : undefined;
+                console.log(`  knownSymbol=${known?.name} id=${known?.id}`);
+                const knownType =
+                  known && checker.getTypeOfSymbolAtLocation(known, known.valueDeclaration);
+                console.log(
+                  `  knownSymbolType=${knownType && checker.typeToString(knownType)}` +
+                    ` flags=${knownType?.flags} unique=${knownType && tsutils.isUniqueESSymbolType(knownType)}` +
+                    ` escapedName=${knownType?.escapedName}` +
+                    ` symbol=${knownType?.symbol?.name} symbolId=${knownType?.symbol?.id}`,
+                );
+              }
+            }
           },
         };
       },

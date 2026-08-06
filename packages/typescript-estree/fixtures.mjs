@@ -159,4 +159,109 @@ const started = true;
 export { started };
 `,
   },
+
+  // Constructs the converter was not written against, added to find real gaps rather
+  // than confirm the shapes it was built from.
+  {
+    name: "destructuring",
+    ext: "ts",
+    code: `const { a, b: renamed, c = 1, ...restObj } = source;
+const [first, , third = 2, ...restArr] = list;
+const { deep: { nested: [x] } } = tree;
+function take({ p, q = 3 }: Opts, [r]: number[]) { return p + q + r; }
+({ assigned } = other);
+[swapA, swapB] = [swapB, swapA];
+`,
+  },
+  {
+    name: "control-flow",
+    ext: "ts",
+    code: `outer: for (const k in obj) {
+  if (k) continue outer; else break outer;
+}
+for (let i = 0, j = 1; i < j; i++, j--) {}
+for await (const chunk of stream) {}
+do { keepGoing(); } while (cond);
+switch (v) {
+  case 1:
+  case 2: { run(); break; }
+  default: fallback();
+}
+try { risky(); } catch { recover(); } finally { cleanup(); }
+try { risky(); } catch (e: unknown) { report(e); }
+while (true) { ; }
+`,
+  },
+  {
+    name: "class-members",
+    ext: "ts",
+    code: `class Full extends Base implements A, B {
+  static { initialize(); }
+  [key: string]: unknown;
+  constructor(private readonly dep: Dep, public other: number) { super(); }
+  get value(): number { return 1; }
+  set value(next: number) {}
+  static async *gen(): AsyncGenerator<number> { yield 1; }
+  declare marker: string;
+  override method(): void {}
+}
+`,
+  },
+  {
+    name: "enums-and-namespaces",
+    ext: "ts",
+    code: `enum Direction { Up, Down = 5, Named = "n" }
+const enum Fast { A = 1 }
+declare enum Ambient { X }
+namespace Outer.Inner { export const value = 1; }
+declare module "external" { export const thing: number; }
+declare global { interface Window { custom: string } }
+`,
+  },
+  {
+    name: "functions-and-generators",
+    ext: "ts",
+    code: `async function* streamer(): AsyncGenerator<number> {
+  yield 1;
+  yield* other();
+  const v = await promise;
+  return v;
+}
+function overloaded(a: string): string;
+function overloaded(a: number): number;
+function overloaded(a: unknown): unknown { return a; }
+const seq = (a, b) => (a, b);
+const nested = () => () => 1;
+new.target;
+`,
+  },
+  {
+    name: "modules",
+    ext: "ts",
+    code: `import * as ns from "a";
+import type { T } from "b";
+import { type U, V } from "c";
+import def, * as everything from "d";
+import "side-effect";
+export * from "e";
+export * as grouped from "f";
+export { one, two as three } from "g";
+export type { T as Alias };
+export default function named() {}
+`,
+  },
+  {
+    name: "type-system",
+    ext: "ts",
+    code: `type Tuple = [first: string, second?: number, ...rest: boolean[]];
+type Guard = (x: unknown) => x is string;
+type Ctor = new (a: string) => object;
+type Idx = { [k: string]: number };
+type Q = typeof globalThis;
+type Rec = A.B.C<D>;
+type Opt = { a?: string; readonly b: number };
+declare function assertIt(x: unknown): asserts x is string;
+abstract class Shape { abstract area(): number; }
+`,
+  },
 ];

@@ -5,20 +5,24 @@
 // package hands it.
 
 export { convertComments } from "./comments.mjs";
+export { Converter, convertProgram } from "./convert.mjs";
 export { getLocFor, getRange } from "./node-utils.mjs";
 export { convertToken, convertTokens, getTokenType, walkTokenNodes } from "./tokens.mjs";
 
 import { convertComments } from "./comments.mjs";
+import { convertProgram } from "./convert.mjs";
 import { convertTokens } from "./tokens.mjs";
 
 /**
- * The syntactic half of the ESLint AST: the token stream and the comments.
- *
- * Node conversion is not wired in yet, so this is deliberately partial.
+ * The full ESLint AST for a source file, plus the maps that let type-aware rules get
+ * back to the TypeScript node behind any ESTree node.
  */
 export function convertSourceFile(sourceFile) {
-  return {
-    comments: convertComments(sourceFile),
-    tokens: convertTokens(sourceFile),
-  };
+  const { ast, esTreeNodeToTSNodeMap, tsNodeToESTreeNodeMap } = convertProgram(sourceFile);
+
+  // ESLint reads comments and tokens off the Program node itself.
+  ast.comments = convertComments(sourceFile);
+  ast.tokens = convertTokens(sourceFile);
+
+  return { ast, esTreeNodeToTSNodeMap, tsNodeToESTreeNodeMap };
 }

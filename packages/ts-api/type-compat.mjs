@@ -156,7 +156,10 @@ function lazyHandleArray(object, name, resolve) {
   // and an empty array satisfies `??`, so the type graph is never walked, containsAny
   // comes back false, and a necessary assertion gets reported as unnecessary.
   if (raw.length === 0) {
-    define(object, name, undefined);
+    // Plain assignment, not defineProperty: this runs for four fields on every type
+    // object that crosses the checker boundary, and these are ordinary writable class
+    // fields, so redefining them costs more than writing them.
+    object[name] = undefined;
     return;
   }
   if (typeof raw[0] !== "number") {
@@ -324,7 +327,7 @@ function adaptSignature(signature) {
 
   const raw = signature.parameters;
   if (Array.isArray(raw) && (raw.length === 0 || typeof raw[0] === "number")) {
-    define(signature, "parameters", signature.getParameters().map(adaptSymbol));
+    signature.parameters = signature.getParameters().map(adaptSymbol);
   }
   return signature;
 }
@@ -468,6 +471,23 @@ function resolveTypePosition(checker, node, result) {
   } catch {
     return result;
   }
+}
+
+/**
+ * A panic on the server rather than an error from our own code.
+ *
+ * The sync channel reports one by throwing an Error whose message is the Go panic text
+ * and stack, so the marker is the message itself.
+ */
+function isServerPanic(error) {
+  return typeof error?.message === "string" && error.message.startsWith("panic:");
+}
+
+/** Queries typescript-go could not answer. Reported by the benchmark, asserted by tests. */
+let unanswered = 0;
+
+export function unansweredQueries() {
+  return unanswered;
 }
 
 /** Memoise methods taking one object, keyed by that object's identity. */
@@ -652,7 +672,22 @@ export function installTypeCompat(checker) {
         return adapt(cache.get(nodeOrNodes));
       }
 
-      let result = original.call(checker, nodeOrNodes);
+      let result;
+      try {
+        result = original.call(checker, nodeOrNodes);
+      } catch (error) {
+        if (!isServerPanic(error)) {
+          throw error;
+        }
+        // typescript-go recovers from its own panic and keeps serving, so one node it
+        // cannot answer for should cost one answer rather than every finding in the file.
+        // Seen on typescript@7.0.2 building the response for a tuple type reference:
+        // api/proto.go newTypeResponse does an unchecked AsTupleType. `unknown` is the
+        // honest stand-in, and it is the answer that makes the unsafe-* rules stay quiet
+        // rather than invent a report from a type nobody could compute.
+        unanswered++;
+        result = name === "getTypeAtLocation" ? checker.getUnknownType() : undefined;
+      }
       if (name === "getTypeAtLocation") {
         result = resolveTypePosition(checker, nodeOrNodes, result);
       }

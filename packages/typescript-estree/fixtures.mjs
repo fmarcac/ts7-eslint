@@ -130,6 +130,25 @@ function documented(x: number) {
 export { documented };
 `,
   },
+  // A file whose very first characters are a JSDoc comment attached to a declaration.
+  // TypeScript 7 hangs that comment on the declaration as a JSDoc *node*, and asking
+  // astnav for the token at position 0 answers with that node rather than with a token,
+  // so the token list ends up covering the same characters as the comment list. ESLint
+  // merges the two into one position-ordered sequence and never terminates when they
+  // overlap: the whole file hangs. Nothing else here opens that way.
+  {
+    name: "comments-leading-jsdoc",
+    ext: "ts",
+    code: `/**
+ * Documented from the first character of the file.
+ * @public
+ */
+export interface Documented {
+  /** A documented member. */
+  value: string;
+}
+`,
+  },
   {
     name: "comments-not-comments",
     ext: "ts",

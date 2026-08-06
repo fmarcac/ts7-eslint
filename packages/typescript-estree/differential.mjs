@@ -163,6 +163,21 @@ function compareList(label, ours, theirs, report) {
   return false;
 }
 
+/** No token may sit on the same characters as a comment, and neither list may go backwards. */
+function noOverlap(tokens, comments, report) {
+  const merged = [...tokens, ...comments].sort((a, b) => a.range[0] - b.range[0]);
+  let ok = true;
+  for (let i = 1; i < merged.length; i++) {
+    if (merged[i].range[0] < merged[i - 1].range[1]) {
+      report.push(
+        `  overlap: ${merged[i - 1].type} [${merged[i - 1].range}] and ${merged[i].type} [${merged[i].range}]`,
+      );
+      ok = false;
+    }
+  }
+  return ok;
+}
+
 // ---- run -----------------------------------------------------------------
 
 console.log(`reference: typescript-estree 8.66.0 on typescript ${referenceTypeScriptVersion}`);
@@ -211,7 +226,13 @@ for (const fixture of files) {
     upstream.comments.map(commentKey),
     report,
   );
-  if (!tokensOk || !commentsOk) {
+  // ESLint merges tokens and comments into one position-ordered sequence and does not
+  // terminate if the two overlap, so a file that produces overlapping ranges does not
+  // lint wrongly, it hangs. Checked separately from the comparison above because the
+  // symptom is severe enough to name on its own.
+  const overlapsOk = noOverlap(convertTokens(sourceFile), convertComments(sourceFile), report);
+
+  if (!tokensOk || !commentsOk || !overlapsOk) {
     syntacticFailures++;
   }
 
@@ -266,9 +287,11 @@ console.log(`\ntokens and comments: ${files.length - syntacticFailures}/${files.
 console.log(`getChildren:         ${files.length - childrenFailures}/${files.length} fixtures match`);
 if (childrenFailures > 0) {
   console.log(
-    "  the rest are genuine TS 6 / TS 7 parser differences, not reconstruction errors:\n" +
-      "  JSX `</` as one token vs two, JSDoc node extents, and array holes as\n" +
-      "  BindingElement rather than OmittedExpression",
+    "  JSX `</` as one token vs two, and array holes as BindingElement rather than\n" +
+      "  OmittedExpression, are parser differences. JSDoc is a deliberate omission:\n" +
+      "  TS 6 listed JSDoc nodes among a node's children, and asking the TS 7 scanner\n" +
+      "  for the tokens spanning JSDoc hands back the node itself, which recurses.\n" +
+      "  ESLint reads none of this: tokens, comments and the AST are exact.",
   );
 }
 console.log(`full AST:            ${astMatches}/${files.length} fixtures match`);

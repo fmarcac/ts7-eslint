@@ -12,6 +12,7 @@
 
 const ast = require("typescript/unstable/ast");
 const is = require("typescript/unstable/ast/is");
+const { textToKeywordObj } = require("typescript/unstable/ast/scanner");
 const sync = require("typescript/unstable/sync");
 const real = require("typescript");
 const ts6Enums = require("./ts6-enums.cjs");
@@ -59,6 +60,80 @@ function isClassLike(node) {
 
 function isMethodSignature(node) {
   return node?.kind === SyntaxKind.MethodSignature;
+}
+
+/**
+ * TypeScript 6's isStringLiteralLike.
+ *
+ * Both a quoted string and an untagged template with no substitutions are "string
+ * literal like", because both have a fixed `text`. ts-api-utils asks this in
+ * isDeclarationName and isPropertyNameLiteral, which is on the path of several rules.
+ */
+function isStringLiteralLike(node) {
+  return (
+    node?.kind === SyntaxKind.StringLiteral ||
+    node?.kind === SyntaxKind.NoSubstitutionTemplateLiteral
+  );
+}
+
+// TypeScript 6 kept decorators and modifiers in one `modifiers` array and offered these
+// two accessors to separate them again. TypeScript 7 kept the array and dropped the
+// accessors.
+function getDecorators(node) {
+  return node?.modifiers?.filter(is.isDecorator);
+}
+
+function getModifiers(node) {
+  return node?.modifiers?.filter((modifier) => !is.isDecorator(modifier));
+}
+
+function canHaveDecorators(node) {
+  switch (node?.kind) {
+    case SyntaxKind.ClassDeclaration:
+    case SyntaxKind.ClassExpression:
+    case SyntaxKind.GetAccessor:
+    case SyntaxKind.MethodDeclaration:
+    case SyntaxKind.Parameter:
+    case SyntaxKind.PropertyDeclaration:
+    case SyntaxKind.SetAccessor:
+      return true;
+    default:
+      return false;
+  }
+}
+
+// Union predicates that unstable/ast/is does not provide, because it generates one
+// function per single kind.
+function isCaseOrDefaultClause(node) {
+  return node?.kind === SyntaxKind.CaseClause || node?.kind === SyntaxKind.DefaultClause;
+}
+
+function isImportOrExportSpecifier(node) {
+  return node?.kind === SyntaxKind.ImportSpecifier || node?.kind === SyntaxKind.ExportSpecifier;
+}
+
+function isPropertySignature(node) {
+  return node?.kind === SyntaxKind.PropertySignature;
+}
+
+function isJSDocFunctionType(node) {
+  return node?.kind === SyntaxKind.JSDocFunctionType;
+}
+
+/** A file is an external module when the parser found an import, export, or `import.meta`. */
+function isExternalModule(sourceFile) {
+  return sourceFile?.externalModuleIndicator !== undefined;
+}
+
+/**
+ * The keyword an identifier would have been, had it not been used as a name.
+ *
+ * `type`, `as` and friends are contextual: the parser produces an Identifier and rules
+ * that care ask this to recover which keyword it spells.
+ */
+function identifierToKeywordKind(identifier) {
+  const text = identifier?.escapedText ?? identifier?.text;
+  return typeof text === "string" ? textToKeywordObj[text] : undefined;
 }
 
 /** Mirrors TS 6's isTypeOnlyImportOrExportDeclaration. */
@@ -139,18 +214,29 @@ module.exports = {
   ...ast,
   ...ts6Enums,
 
+  canHaveDecorators,
   displayPartsToString,
   forEachChild,
   getCombinedModifierFlags,
+  getDecorators,
+  getModifiers,
   getNameOfDeclaration,
+  identifierToKeywordKind,
+  isCaseOrDefaultClause,
   isClassLike,
+  isExternalModule,
   isFunctionLike,
+  isImportOrExportSpecifier,
+  isJSDocFunctionType,
   isMethodSignature,
   isParameter,
+  isPropertySignature,
+  isStringLiteralLike,
   isTypeOnlyImportOrExportDeclaration,
 
   // Enums live on both entry points; sync carries the checker-side ones.
   ElementFlags: sync.ElementFlags,
+  ModuleKind: sync.ModuleKind,
   ModifierFlags: sync.ModifierFlags,
   ObjectFlags: sync.ObjectFlags,
   SignatureKind: sync.SignatureKind,

@@ -17,7 +17,8 @@
 // 6.0.3's real getChildren across the whole fixture corpus, because an implementation
 // that is merely close would misindex silently rather than fail.
 
-import { NodeFlags, SyntaxKind, findNextToken, getTokenAtPosition } from "typescript/unstable/ast";
+import { NodeFlags, SyntaxKind, getTokenAtPosition } from "typescript/unstable/ast";
+import { nextTokenAfter } from "./token-walk.mjs";
 
 const SYNTAX_LIST = SyntaxKind.SyntaxList;
 const END_OF_FILE = SyntaxKind.EndOfFile ?? SyntaxKind.EndOfFileToken;
@@ -85,7 +86,7 @@ function appendTokens(sourceFile, from, to, out) {
       return;
     }
     out.push(token);
-    const next = findNextToken(token, sourceFile, sourceFile);
+    const next = nextTokenAfter(token, sourceFile);
     if (!next || next.end <= token.end) {
       return;
     }

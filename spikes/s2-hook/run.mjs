@@ -69,22 +69,65 @@ if (failures.size > 0) {
 
 // Static check of the shim surface. Extracted from the installed sources rather than
 // hardcoded, so it stays honest as upstream changes.
+//
+// The import is not always called `ts`. Both upstream and ts-api-utils ship rollup
+// bundles that rename it (`ts9`, plus a `ts9__default.default` interop alias), so the
+// local name is read out of each file's own require of "typescript" rather than assumed.
+// Guessing `ts` here is how isStringLiteralLike, referenced only as `ts9.` from
+// ts-api-utils, was missing from the shim while this check reported full coverage.
 function collectTsMembers(dir) {
   const found = new Set();
   for (const entry of readdirSync(dir, { recursive: true, withFileTypes: true })) {
-    if (!entry.isFile() || !entry.name.endsWith(".js")) {
+    if (!entry.isFile() || !/\.(js|cjs|mjs)$/.test(entry.name)) {
       continue;
     }
     const source = readFileSync(join(entry.parentPath ?? dir, entry.name), "utf8");
-    for (const match of source.matchAll(/\bts\.([A-Za-z_][A-Za-z0-9_]*)/g)) {
-      found.add(match[1]);
+    const aliases = new Set(["ts"]);
+    for (const pattern of [
+      /(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*require\(["']typescript["']\)/g,
+      /import\s+(?:\*\s+as\s+)?([A-Za-z_$][\w$]*)\s*(?:,[^;]*?)?\s*from\s*["']typescript["']/g,
+    ]) {
+      for (const match of source.matchAll(pattern)) {
+        aliases.add(match[1]);
+        aliases.add(`${match[1]}__default.default`);
+      }
+    }
+    for (const alias of aliases) {
+      const escaped = alias.replace(/[.$]/g, "\\$&");
+      for (const match of source.matchAll(
+        new RegExp(`(?<![\\w$.])${escaped}\\.([A-Za-z_][A-Za-z0-9_]*)`, "g"),
+      )) {
+        found.add(match[1]);
+      }
     }
   }
   return found;
 }
 
-const pluginDist = dirname(require.resolve("@typescript-eslint/eslint-plugin"));
-const used = collectTsMembers(pluginDist);
+// Everything that runs against the shim. Upstream's own typescript-estree is redirected
+// to this project's, so its compiler use is deliberately not counted.
+const consumers = [
+  "@typescript-eslint/eslint-plugin",
+  "@typescript-eslint/type-utils",
+  "@typescript-eslint/utils",
+  "ts-api-utils",
+];
+const pluginEntry = require.resolve("@typescript-eslint/eslint-plugin");
+// Resolve the rest the way the plugin itself would, since they are its dependencies.
+const fromPlugin = createRequire(pluginEntry);
+const used = new Set();
+for (const name of consumers) {
+  let entry;
+  try {
+    entry = fromPlugin.resolve(name);
+  } catch {
+    console.log(`   (not installed, skipped: ${name})`);
+    continue;
+  }
+  for (const member of collectTsMembers(dirname(entry))) {
+    used.add(member);
+  }
+}
 const missing = [...used].filter((member) => !(member in shim)).sort();
 
 console.log(`\nts.* members referenced by upstream: ${used.size}`);

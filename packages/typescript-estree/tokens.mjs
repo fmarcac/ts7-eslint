@@ -11,11 +11,8 @@
 // getTokenType and convertToken are deliberate ports of upstream's versions and must
 // stay behaviourally identical; the differential runner holds them to it.
 
-import {
-  SyntaxKind,
-  findNextToken,
-  getTokenAtPosition,
-} from "typescript/unstable/ast";
+import { nextTokenAfter } from "@tseslint7/ts-api";
+import { SyntaxKind, getTokenAtPosition, isTokenKind } from "typescript/unstable/ast";
 import { getLocFor } from "./node-utils.mjs";
 
 // TS 7 renamed EndOfFileToken to EndOfFile. Tolerate either.
@@ -139,11 +136,28 @@ function makePunctuator(value, start, end, sourceFile) {
  * not their ESTree projections, so the walk is exposed separately from the conversion.
  */
 export function* walkTokenNodes(sourceFile) {
+  // Position 0 is inside leading trivia whenever a file opens with a comment, and
+  // getTokenAtPosition resolves a position in trivia to the JSDoc node that owns it. A
+  // JSDoc node is not a token: it spans the entire comment, so taking it as the first
+  // token puts a token and a comment on the same characters. ESLint merges the two lists
+  // into one position-ordered sequence and does not terminate when they overlap, so a
+  // file beginning with a documented declaration hangs the linter outright. Skip forward
+  // to the first real token instead.
   let token = getTokenAtPosition(sourceFile, 0);
+  while (token && !isTokenKind(token.kind)) {
+    const next = getTokenAtPosition(sourceFile, token.end);
+    if (!next || next.end <= token.end) {
+      return;
+    }
+    token = next;
+  }
 
   while (token && token.kind !== END_OF_FILE) {
-    yield token;
-    const next = findNextToken(token, sourceFile, sourceFile);
+    // Same reasoning as above, for anything the walk lands on later.
+    if (isTokenKind(token.kind)) {
+      yield token;
+    }
+    const next = nextTokenAfter(token, sourceFile);
     if (!next || next.end <= token.end) {
       // No forward progress means the walk is stuck; stop rather than spin.
       break;

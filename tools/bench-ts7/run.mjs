@@ -7,6 +7,7 @@ import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { relative } from "node:path";
 import { assertNotAlreadyLoaded, installResolutionHook } from "@tseslint7/resolution-hook";
+import { unansweredQueries } from "@tseslint7/ts-api";
 import { report, ruleSet } from "./shared.mjs";
 
 assertNotAlreadyLoaded();
@@ -24,6 +25,7 @@ const files = readFileSync(listFile, "utf8").split("\n").filter(Boolean);
 // With --parse-only the rule set is empty, which isolates parse, convert and scope
 // analysis from rule execution.
 const rules = process.argv.includes("--parse-only") ? {} : ruleSet(plugin);
+const verbose = process.argv.includes("--verbose");
 const linter = new Linter();
 const config = [
   {
@@ -52,6 +54,10 @@ for (const [index, file] of files.entries()) {
   if (index === 0) {
     firstFileMs = performance.now() - fileStarted;
   }
+  if (verbose) {
+    const elapsed = (performance.now() - fileStarted).toFixed(0).padStart(8);
+    process.stderr.write(`${elapsed} ms  ${relative(rootDir, file)}\n`);
+  }
   for (const message of messages) {
     findings.push(
       `${relative(rootDir, file)}:${message.line}:${message.column} ${message.ruleId ?? "(fatal)"} ${message.messageId ?? message.message.slice(0, 40)}`,
@@ -67,4 +73,5 @@ report({
   totalMs: performance.now() - started,
   findings,
   crashes,
+  unanswered: unansweredQueries(),
 });

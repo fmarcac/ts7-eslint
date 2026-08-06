@@ -127,6 +127,9 @@ function report(result) {
     ...(ts6.crashes ?? []).map((c) => `TS 6: ${c}`),
     ...(ts7.crashes ?? []).map((c) => `TS 7: ${c}`),
   ];
+  if (ts7.unanswered > 0) {
+    console.log(`    ${String(ts7.unanswered).padStart(4)}x query typescript-go could not answer`);
+  }
   if (crashes.length > 0) {
     const grouped = new Map();
     for (const reason of crashes) {

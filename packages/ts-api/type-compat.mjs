@@ -25,6 +25,10 @@
 
 import { SyntaxKind } from "typescript/unstable/ast";
 import { SignatureKind, TypeFlags } from "typescript/unstable/sync";
+import { batchTypesFrom } from "./type-batch.mjs";
+
+/** Batched look-ahead for type queries. Set TSESLINT7_BATCH=0 to ask one node at a time. */
+const batching = process.env.TSESLINT7_BATCH !== "0";
 
 /** Objects already adapted, so repeat crossings are free. */
 const adapted = new WeakSet();
@@ -785,6 +789,19 @@ export function installTypeCompat(checker) {
       }
       if (cache.has(nodeOrNodes)) {
         return adapt(cache.get(nodeOrNodes));
+      }
+
+      // One request for this node and the ones after it. When it works, the next few
+      // queries are cache hits; when it does not, this is the ordinary single query.
+      if (
+        batching &&
+        name === "getTypeAtLocation" &&
+        batchTypesFrom(checker, nodeOrNodes, cache, (window) => original.call(checker, window)) &&
+        cache.has(nodeOrNodes)
+      ) {
+        const batched = resolveTypePosition(checker, nodeOrNodes, cache.get(nodeOrNodes));
+        cache.set(nodeOrNodes, batched);
+        return adapt(batched);
       }
 
       let result;

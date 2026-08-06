@@ -134,6 +134,13 @@ function report(result) {
         `${(serverTimeMs / 1000).toFixed(2)}s of it server time, ` +
         `${(bytesReceived / 1e6).toFixed(1)} MB received`,
     );
+    console.log(
+      `    ${ts7.batches.batches} of ${ts7.batches.attempts} attempts batched, covering ${ts7.batches.batched} nodes` +
+        (ts7.batches.stoppedAfter ? `; stopped after ${ts7.batches.stoppedAfter}` : "") +
+        (ts7.batches.missed?.length
+          ? `; not covered: ${ts7.batches.missed.map(([k, n]) => `${k} ${n}`).join(", ")}`
+          : ""),
+    );
     for (const [method, count] of (ts7.timing.byMethod ?? []).slice(0, 8)) {
       console.log(`      ${String(count).padStart(8)}  ${method}`);
     }

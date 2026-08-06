@@ -130,6 +130,23 @@ function documented(x: number) {
 export { documented };
 `,
   },
+  // Dynamic import. TypeScript parses it as a call whose callee is the `import` keyword;
+  // ESTree gives it its own node with the specifier in `source`. Getting that wrong is
+  // not visible in the tree shape alone: the callee has no type, so every dynamic import
+  // in a file gets reported by no-unsafe-call.
+  {
+    name: "dynamic-import",
+    ext: "ts",
+    code: `const lazy = () => import("./module");
+const withOptions = import("./module", { with: { type: "json" } });
+async function load() {
+  const mod = await import("./other");
+  return mod;
+}
+export { lazy, withOptions, load };
+`,
+  },
+
   // A file whose very first characters are a JSDoc comment attached to a declaration.
   // TypeScript 7 hangs that comment on the declaration as a JSDoc *node*, and asking
   // astnav for the token at position 0 answers with that node rather than with a token,

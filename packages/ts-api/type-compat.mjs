@@ -24,7 +24,7 @@
 // each one is installed only when it is actually missing.
 
 import { SyntaxKind } from "typescript/unstable/ast";
-import { SignatureKind, TypeFlags } from "typescript/unstable/sync";
+import { ObjectFlags, SignatureKind, TypeFlags } from "typescript/unstable/sync";
 import { batchTypesFrom } from "./type-batch.mjs";
 
 /** Batched look-ahead for type queries. Set TSESLINT7_BATCH=0 to ask one node at a time. */
@@ -250,6 +250,26 @@ function adaptType(type) {
     return adaptSymbol(this.getAliasSymbol());
   });
 
+  // TypeScript 6 exposed a type reference's arguments as a `typeArguments` property as
+  // well as through getTypeArguments. TypeScript 7 has only the method, and there is no
+  // field to adapt: the property simply is not there.
+  //
+  // type-utils reads the property. isUnsafeAssignment compares a sender's type arguments
+  // against a receiver's with `type.typeArguments ?? []`, so on TypeScript 7 it compared
+  // nothing and called every generic assignment safe. `const xs: Foo[] = new Array(n)`
+  // assigns `any[]` and went unreported.
+  if (!("typeArguments" in type)) {
+    let cached;
+    let computed = false;
+    defineGetter(type, "typeArguments", function () {
+      if (!computed) {
+        computed = true;
+        cached = isTypeReference(this) ? currentChecker.getTypeArguments(this) : undefined;
+      }
+      return cached;
+    });
+  }
+
   // Type also keeps four *lists* of handle ids. no-unnecessary-type-assertion reads
   // `type.aliasTypeArguments` directly and recurses into the elements, so a bare number
   // reaches code expecting a Type.
@@ -388,6 +408,16 @@ const MAX_AWAIT_DEPTH = 10;
 
 function isFlagSet(type, flags) {
   return type != null && (type.flags & flags) !== 0;
+}
+
+/**
+ * Whether a type is a reference to a generic type, and so has type arguments.
+ *
+ * Worth testing before asking: typescript-go's getTypeArguments dereferences the target
+ * without checking, so asking a non-reference crashes the server rather than answering.
+ */
+function isTypeReference(type) {
+  return type != null && ((type.objectFlags ?? 0) & ObjectFlags.Reference) !== 0;
 }
 
 function firstParameterType(checker, signature) {
@@ -871,6 +901,15 @@ export function installTypeCompat(checker) {
     "typeToString",
   ]);
   memoiseByTwoObjects(checker, ["getTypeOfSymbolAtLocation", "isTypeAssignableTo"]);
+
+  // typescript-go reads the target off whatever it is handed, so asking a type that is
+  // not a reference for its type arguments takes the server down with a nil dereference
+  // rather than returning nothing. TypeScript 6 answered the same question with an empty
+  // list, so answer it here instead of asking.
+  {
+    const original = checker.getTypeArguments;
+    define(checker, "getTypeArguments", (type) => (isTypeReference(type) ? original(type) : []));
+  }
 
   wrapReturning(checker, SYMBOL_RETURNING, adaptSymbol);
   wrapReturning(checker, SIGNATURE_RETURNING, adaptSignature);

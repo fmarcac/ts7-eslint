@@ -1725,6 +1725,21 @@ export class Converter {
           property: this.convert(node.argumentExpression),
         });
       case SyntaxKind.CallExpression:
+        // TypeScript parses `import("./m")` as an ordinary call whose callee is the
+        // `import` keyword. ESTree gives it its own node, and the difference matters:
+        // left as a call, no-unsafe-call asks for the type of the `import` keyword, is
+        // told it is the error type, and reports every dynamic import in the file.
+        {
+          const phase = this.#importPhase(node.expression);
+          if (phase !== undefined) {
+            return this.#node(node, {
+              type: "ImportExpression",
+              options: node.arguments[1] ? this.convert(node.arguments[1]) : null,
+              phase,
+              source: this.convert(node.arguments[0]),
+            });
+          }
+        }
         return this.#node(node, {
           type: "CallExpression",
           arguments: this.#convertAll(node.arguments),
@@ -1742,6 +1757,26 @@ export class Converter {
       default:
         return this.#unsupported(node);
     }
+  }
+
+  /**
+   * The `phase` of a call that is really a dynamic import, or undefined for a real call.
+   *
+   * `import(...)` has no phase; `import.defer(...)` has "defer" and reaches the parser as
+   * a call on a MetaProperty.
+   */
+  #importPhase(callee) {
+    if (callee.kind === SyntaxKind.ImportKeyword) {
+      return null;
+    }
+    if (
+      callee.kind === SyntaxKind.MetaProperty &&
+      callee.keywordToken === SyntaxKind.ImportKeyword &&
+      callee.name?.text === "defer"
+    ) {
+      return "defer";
+    }
+    return undefined;
   }
 
   /** True when no enclosing node continues the same chain. */

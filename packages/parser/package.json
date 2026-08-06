@@ -1,0 +1,24 @@
+{
+  "name": "@tseslint7/parser",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./index.mjs"
+  },
+  "scripts": {
+    "test": "node test.mjs"
+  },
+  "dependencies": {
+    "@tseslint7/ts-api": "workspace:*",
+    "@tseslint7/typescript-estree": "workspace:*",
+    "@typescript-eslint/scope-manager": "8.66.0",
+    "@typescript-eslint/visitor-keys": "8.66.0"
+  },
+  "devDependencies": {
+    "eslint": "10.8.0",
+    "typescript": "7.0.2",
+    "@tseslint7/resolution-hook": "workspace:*",
+    "@typescript-eslint/eslint-plugin": "8.66.0"
+  }
+}

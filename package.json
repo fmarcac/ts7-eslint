@@ -10,6 +10,7 @@
     "smoke:ts-api": "node packages/ts-api/smoke.mjs",
     "spike:hook": "node spikes/s2-hook/run.mjs",
     "test:estree": "node packages/typescript-estree/differential.mjs",
-    "test": "pnpm test:estree && pnpm spike:hook && pnpm smoke:ts-api"
+    "test:parser": "node packages/parser/test.mjs",
+    "test": "pnpm test:estree && pnpm smoke:ts-api && pnpm spike:hook && pnpm test:parser"
   }
 }

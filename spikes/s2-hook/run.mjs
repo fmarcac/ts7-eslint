@@ -8,7 +8,7 @@
 import { readFileSync, readdirSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
-import { assertNotAlreadyLoaded, installResolutionHook } from "./hook.mjs";
+import { assertNotAlreadyLoaded, installResolutionHook } from "@tseslint7/resolution-hook";
 
 const redirects = [];
 assertNotAlreadyLoaded();

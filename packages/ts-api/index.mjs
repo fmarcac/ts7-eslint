@@ -6,3 +6,4 @@
 
 export { capabilities } from "./capabilities.mjs";
 export { clearProgramServices, getProgramService } from "./program-service.mjs";
+export { installTypeCompat, resetTypeCompat } from "./type-compat.mjs";

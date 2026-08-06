@@ -10,6 +10,7 @@
 
 import { readFileSync } from "node:fs";
 import { API } from "typescript/unstable/sync";
+import { installTypeCompat, resetTypeCompat } from "./type-compat.mjs";
 
 /** tsconfig path to ProgramService. ESLint calls the parser once per file. */
 const services = new Map();
@@ -26,6 +27,9 @@ class ProgramService {
   #diskCache = new Map();
 
   #snapshot;
+  /** The resolved project, and the snapshot it belongs to. */
+  #project;
+  #projectForSnapshot;
   /** Count of snapshot replacements. Exposed so tests can assert we do not churn. */
   #updates = 0;
 
@@ -49,9 +53,23 @@ class ProgramService {
     }
   }
 
+  /**
+   * The project for this tsconfig, resolved once per snapshot.
+   *
+   * Caching is not an optimisation here, it is required for correctness. Symbols and
+   * types are handles owned by a particular checker, and passing one back to a different
+   * checker fails with "empty symbol handle". Resolving the project on every access
+   * risks handing out a different Checker each time, so it is pinned to the snapshot and
+   * only recomputed when the snapshot is replaced.
+   */
   get project() {
-    const projects = this.#snapshot.getProjects();
-    return projects.find((p) => p.configFileName === this.#tsconfigPath) ?? projects[0];
+    if (this.#projectForSnapshot !== this.#snapshot) {
+      const projects = this.#snapshot.getProjects();
+      this.#project =
+        projects.find((p) => p.configFileName === this.#tsconfigPath) ?? projects[0];
+      this.#projectForSnapshot = this.#snapshot;
+    }
+    return this.#project;
   }
 
   get program() {
@@ -59,7 +77,11 @@ class ProgramService {
   }
 
   get checker() {
-    return this.project.checker;
+    const checker = this.project.checker;
+    // TS 6 put convenience methods on Type; TS 7.0 moved them to the Checker. Restore
+    // them the first time a checker is handed out, since rules call the old shape.
+    installTypeCompat(checker);
+    return checker;
   }
 
   #readDisk(fileName) {
@@ -110,6 +132,7 @@ class ProgramService {
     const previous = this.#snapshot;
     this.#snapshot = this.#api.updateSnapshot({ fileChanges: { changed: [fileName] } });
     previous.dispose();
+    resetTypeCompat();
     this.#updates++;
   }
 

@@ -1,0 +1,12 @@
+{
+  "name": "@tseslint7/resolution-hook",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./index.mjs"
+  },
+  "dependencies": {
+    "@tseslint7/ts-compat": "workspace:*"
+  }
+}

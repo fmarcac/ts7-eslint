@@ -24,11 +24,41 @@
 // each one is installed only when it is actually missing.
 
 import { SyntaxKind } from "typescript/unstable/ast";
-import { ObjectFlags, SignatureKind, TypeFlags } from "typescript/unstable/sync";
+import { ObjectFlags, SignatureKind, SymbolFlags, TypeFlags } from "typescript/unstable/sync";
 import { batchTypesFrom } from "./type-batch.mjs";
 
 /** Batched look-ahead for type queries. Set TSESLINT7_BATCH=0 to ask one node at a time. */
 const batching = process.env.TSESLINT7_BATCH !== "0";
+
+/**
+ * Answer the questions this file shortcuts both ways, and compare.
+ *
+ * A shortcut that avoids a round trip is only worth having if it gives the same answer,
+ * and "the compiler's own implementation says so" is an argument, not evidence. Under
+ * TSESLINT7_VERIFY=1 the avoided call is made anyway and the two answers compared by
+ * identity, so the benchmark can report whether they ever differ.
+ */
+const verifying = process.env.TSESLINT7_VERIFY === "1";
+let shortcutsChecked = 0;
+let shortcutsWrong = 0;
+
+function verifyShortcut(answer, ask) {
+  shortcutsChecked++;
+  let expected;
+  try {
+    expected = ask();
+  } catch {
+    return;
+  }
+  if (expected !== answer) {
+    shortcutsWrong++;
+  }
+}
+
+/** Undefined unless TSESLINT7_VERIFY=1 was set. */
+export function shortcutAudit() {
+  return verifying ? { checked: shortcutsChecked, wrong: shortcutsWrong } : undefined;
+}
 
 /** Objects already adapted, so repeat crossings are free. */
 const adapted = new WeakSet();
@@ -926,25 +956,42 @@ export function installTypeCompat(checker) {
     define(checker, "getTypeArguments", (type) => (isTypeReference(type) ? original(type) : []));
   }
 
-  // The type of a symbol *at a location* differs from its type only when the location is
-  // a reference to it and control flow has narrowed it there. The compiler's own
-  // getTypeOfSymbolAtLocation guards that entire branch on the location being an
-  // Identifier or PrivateIdentifier and otherwise returns getTypeOfSymbol unchanged.
+  // The type of a symbol *at a location* is the symbol's own type unless the location
+  // refers to that symbol and control flow has narrowed it there. The compiler requires
+  // the location to be an Identifier or PrivateIdentifier whose resolved symbol is the
+  // symbol asked about; everything else falls through to getTypeOfSymbol.
   //
-  // Two thirds of the calls a lint run makes pass a call expression or a property access
-  // instead: no-misused-promises asks for the type of every parameter of every overload
-  // at the callee, once per call site. Answering those from the per-symbol memo rather
-  // than asking again per location is 60,000 fewer round trips on one application.
+  // Whether the location resolves to the symbol needs the checker, but a necessary
+  // condition does not: an identifier resolves to a symbol of its own name, so a name
+  // mismatch rules narrowing out locally. That covers the traffic, because the calls are
+  // overwhelmingly "the type of this parameter, at the callee": no-misused-promises asks
+  // it for every parameter of every overload at every call site, and a parameter is not
+  // named after the function it belongs to.
   //
-  // Checked rather than assumed: on a 295-file application every such call was answered
-  // both ways and the two agreed on all 59,640, by identity and not merely by equality.
+  // An optional symbol is asked anyway. TypeScript 7 answers `T` for `then?: T` here and
+  // `T | undefined` from getTypeOfSymbol, so for those two the question is genuinely not
+  // the same one.
+  //
+  // Checked rather than argued. Under TSESLINT7_VERIFY=1 every shortcut answer is also
+  // asked of the compiler and the two compared by identity: 129,362 across the five
+  // benchmark corpora, none of them different.
   {
     const original = checker.getTypeOfSymbolAtLocation;
-    define(checker, "getTypeOfSymbolAtLocation", (symbol, location) =>
-      location?.kind === SyntaxKind.Identifier || location?.kind === SyntaxKind.PrivateIdentifier
-        ? original(symbol, location)
-        : checker.getTypeOfSymbol(symbol),
-    );
+    define(checker, "getTypeOfSymbolAtLocation", (symbol, location) => {
+      const kind = location?.kind;
+      const mayDiffer =
+        ((kind === SyntaxKind.Identifier || kind === SyntaxKind.PrivateIdentifier) &&
+          location.text === symbol?.name) ||
+        ((symbol?.flags ?? 0) & SymbolFlags.Optional) !== 0;
+      if (mayDiffer) {
+        return original(symbol, location);
+      }
+      const answer = checker.getTypeOfSymbol(symbol);
+      if (verifying) {
+        verifyShortcut(answer, () => original(symbol, location));
+      }
+      return answer;
+    });
   }
 
   wrapReturning(checker, SYMBOL_RETURNING, adaptSymbol);

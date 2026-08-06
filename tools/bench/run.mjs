@@ -145,6 +145,10 @@ function report(result) {
       console.log(`      ${String(count).padStart(8)}  ${method}`);
     }
   }
+  if (ts7.shortcuts) {
+    const { checked, wrong } = ts7.shortcuts;
+    console.log(`    ${checked} shortcut answers checked against the compiler, ${wrong} wrong`);
+  }
   if (ts7.unanswered > 0) {
     console.log(`    ${String(ts7.unanswered).padStart(4)}x query typescript-go could not answer`);
   }

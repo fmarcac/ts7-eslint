@@ -9,4 +9,9 @@ export { clearProgramServices, getProgramService, programTiming } from "./progra
 export { installNodeCompat, resetNodeCompat } from "./node-compat.mjs";
 export { nextTokenAfter } from "./token-walk.mjs";
 export { batchStats } from "./type-batch.mjs";
-export { installTypeCompat, resetTypeCompat, unansweredQueries } from "./type-compat.mjs";
+export {
+  installTypeCompat,
+  resetTypeCompat,
+  shortcutAudit,
+  unansweredQueries,
+} from "./type-compat.mjs";

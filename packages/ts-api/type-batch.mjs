@@ -16,9 +16,10 @@
 // value positions are, and identifiers inside type nodes are not reached at all, so the
 // work being brought forward is work the checker has already done to check the file.
 //
-// The window is large enough that in practice one query covers most of a file. Measured
-// against the TS 6 stack, going from 32 to 512 took the application backend from 1.36x
-// slower to 1.25x and rxjs from 1.30x faster to 1.49x; past 1024 it stops mattering.
+// A wide window wins even though it resolves types nobody asks about, because a request
+// costs more than the bytes it brings back: on the application backend, no batching is
+// 8.80 s, a window of 128 is 7.17 s and one of 512 is 6.95 s. Past 1024 it stops
+// mattering, since one query already covers most of a file.
 
 import { SyntaxKind } from "typescript/unstable/ast";
 
@@ -183,6 +184,10 @@ function queryOrder(sourceFile) {
  *
  * Returns false when there was nothing to batch, in which case the caller should ask the
  * single-node way. Otherwise every node in the window is in `cache` on return.
+ *
+ * getSymbolAtLocation takes an array too, and batching it the same way was tried and
+ * dropped: it removed 5,000 requests on the backend corpus and added 24 MB of symbols
+ * nobody asked for, which came out 170 ms slower.
  */
 export function batchTypesFrom(checker, node, cache, request) {
   attempts++;

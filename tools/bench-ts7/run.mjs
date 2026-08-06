@@ -7,7 +7,7 @@ import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { relative } from "node:path";
 import { assertNotAlreadyLoaded, installResolutionHook } from "@tseslint7/resolution-hook";
-import { batchStats, programTiming, unansweredQueries } from "@tseslint7/ts-api";
+import { batchStats, programTiming, shortcutAudit, unansweredQueries } from "@tseslint7/ts-api";
 import { report, ruleSet } from "./shared.mjs";
 
 assertNotAlreadyLoaded();
@@ -76,4 +76,5 @@ report({
   unanswered: unansweredQueries(),
   timing: programTiming(),
   batches: batchStats(),
+  shortcuts: shortcutAudit(),
 });

@@ -25,3 +25,28 @@ export function parseReference(code, { jsx = false } = {}) {
     tokens: true,
   });
 }
+
+/**
+ * A recursive signature of TypeScript 6's getChildren() output.
+ *
+ * TypeScript 7 dropped getChildren, so the reconstruction has to be held against the
+ * real thing. Kinds are rendered by name and positions are full positions, which is what
+ * getChildren itself reports.
+ */
+export function childrenSignature(code, { jsx = false } = {}) {
+  const sourceFile = ts.createSourceFile(
+    jsx ? "f.tsx" : "f.ts",
+    code,
+    ts.ScriptTarget.ESNext,
+    true,
+    jsx ? ts.ScriptKind.TSX : ts.ScriptKind.TS,
+  );
+  const lines = [];
+  (function walk(node, depth) {
+    lines.push(`${"  ".repeat(depth)}${ts.SyntaxKind[node.kind]}[${node.pos},${node.end}]`);
+    for (const child of node.getChildren(sourceFile)) {
+      walk(child, depth + 1);
+    }
+  })(sourceFile, 0);
+  return lines;
+}

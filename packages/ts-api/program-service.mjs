@@ -10,6 +10,7 @@
 
 import { readFileSync } from "node:fs";
 import { API } from "typescript/unstable/sync";
+import { installNodeCompat, resetNodeCompat } from "./node-compat.mjs";
 import { installTypeCompat, resetTypeCompat } from "./type-compat.mjs";
 
 /** tsconfig path to ProgramService. ESLint calls the parser once per file. */
@@ -133,6 +134,7 @@ class ProgramService {
     this.#snapshot = this.#api.updateSnapshot({ fileChanges: { changed: [fileName] } });
     previous.dispose();
     resetTypeCompat();
+    resetNodeCompat();
     this.#updates++;
   }
 
@@ -142,7 +144,10 @@ class ProgramService {
   }
 
   getSourceFile(fileName) {
-    return this.program.getSourceFile(fileName);
+    const sourceFile = this.program.getSourceFile(fileName);
+    // TS 7 has no getChildren(); restore it the first time a node is available.
+    installNodeCompat(sourceFile);
+    return sourceFile;
   }
 
   /**

@@ -167,11 +167,7 @@ export class Converter {
           specifiers: [],
         };
 
-    return {
-      ...wrapper,
-      range,
-      loc: getLocFor(range[0], range[1], this.ast),
-    };
+    return this.#node(node, wrapper, range);
   }
 
   #convertAll(nodes) {
@@ -207,6 +203,21 @@ export class Converter {
     if (node == null || typeof node !== "object") {
       return node;
     }
+    return this.#rebuilt(node, this.#toPatternInner(node));
+  }
+
+  /** Carry a rebuilt node the original node mapping. */
+  #rebuilt(original, replacement) {
+    if (replacement !== original) {
+      const tsNode = this.esTreeNodeToTSNodeMap.get(original);
+      if (tsNode) {
+        this.esTreeNodeToTSNodeMap.set(replacement, tsNode);
+      }
+    }
+    return replacement;
+  }
+
+  #toPatternInner(node) {
     switch (node.type) {
       case "ObjectExpression":
         return {
@@ -292,12 +303,7 @@ export class Converter {
   #enumBody(node) {
     const open = this.ast.text.indexOf("{", node.name.getEnd());
     const range = [open === -1 ? node.getStart(this.ast) : open, node.getEnd()];
-    return {
-      type: "TSEnumBody",
-      members: this.#convertAll(node.members),
-      range,
-      loc: getLocFor(range[0], range[1], this.ast),
-    };
+    return this.#node(node, { type: "TSEnumBody", members: this.#convertAll(node.members) }, range);
   }
 
   #isGlobalAugmentation(node) {
@@ -350,12 +356,7 @@ export class Converter {
     }
 
     const range = [start, typeNode.getEnd()];
-    return {
-      type: "TSTypeAnnotation",
-      typeAnnotation: converted,
-      range,
-      loc: getLocFor(range[0], range[1], this.ast),
-    };
+    return this.#node(typeNode, { type: "TSTypeAnnotation", typeAnnotation: converted }, range);
   }
 
   #postfix(node, kind) {
@@ -1163,13 +1164,7 @@ export class Converter {
         for (const segment of names.slice(1)) {
           const right = this.convert(segment);
           const range = [id.range[0], right.range[1]];
-          id = {
-            type: "TSQualifiedName",
-            left: id,
-            right,
-            range,
-            loc: getLocFor(range[0], range[1], this.ast),
-          };
+          id = this.#node(segment, { type: "TSQualifiedName", left: id, right }, range);
         }
         return this.#node(node, {
           type: "TSModuleDeclaration",
@@ -1233,12 +1228,7 @@ export class Converter {
         if (!node.dotDotDotToken) {
           return member;
         }
-        return {
-          type: "TSRestType",
-          typeAnnotation: member,
-          range: outerRange,
-          loc: getLocFor(outerRange[0], outerRange[1], this.ast),
-        };
+        return this.#node(node, { type: "TSRestType", typeAnnotation: member }, outerRange);
       }
 
       case SyntaxKind.RestType:
@@ -1389,12 +1379,11 @@ export class Converter {
     }
     // NodeArray carries its own pos/end, which bracket the angle brackets.
     const range = [args.pos - 1, args.end + 1];
-    return {
-      type: "TSTypeParameterInstantiation",
-      params: this.#convertAll(args),
+    return this.#node(
+      node,
+      { type: "TSTypeParameterInstantiation", params: this.#convertAll(args) },
       range,
-      loc: getLocFor(range[0], range[1], this.ast),
-    };
+    );
   }
 
   /** `<T extends string>` at a declaration site. */
@@ -1404,12 +1393,11 @@ export class Converter {
       return undefined;
     }
     const range = [params.pos - 1, params.end + 1];
-    return {
-      type: "TSTypeParameterDeclaration",
-      params: this.#convertAll(params),
+    return this.#node(
+      node,
+      { type: "TSTypeParameterDeclaration", params: this.#convertAll(params) },
       range,
-      loc: getLocFor(range[0], range[1], this.ast),
-    };
+    );
   }
 
   /** A mapped type's `+`/`-` modifier, or true when the token is bare. */
@@ -1448,11 +1436,7 @@ export class Converter {
   /** `{}` or `{/* comment *​/}` inside JSX: an empty container, spanning the braces. */
   #jsxEmptyExpression(node) {
     const range = [node.getStart(this.ast) + 1, node.getEnd() - 1];
-    return {
-      type: "JSXEmptyExpression",
-      range,
-      loc: getLocFor(range[0], range[1], this.ast),
-    };
+    return this.#node(node, { type: "JSXEmptyExpression" }, range);
   }
 
   /** ESTree spells accessibility out; TypeScript keeps it in the modifier bitmask. */
@@ -1505,24 +1489,14 @@ export class Converter {
     const members = this.#convertAll(node.members);
     const openBrace = this.ast.text.indexOf("{", node.name?.getEnd() ?? node.getStart(this.ast));
     const range = [openBrace === -1 ? node.getStart(this.ast) : openBrace, node.getEnd()];
-    return {
-      type: "ClassBody",
-      body: members,
-      range,
-      loc: getLocFor(range[0], range[1], this.ast),
-    };
+    return this.#node(node, { type: "ClassBody", body: members }, range);
   }
 
   #interfaceBody(node) {
     const members = this.#convertAll(node.members);
     const openBrace = this.ast.text.indexOf("{", node.name.getEnd());
     const range = [openBrace === -1 ? node.getStart(this.ast) : openBrace, node.getEnd()];
-    return {
-      type: "TSInterfaceBody",
-      body: members,
-      range,
-      loc: getLocFor(range[0], range[1], this.ast),
-    };
+    return this.#node(node, { type: "TSInterfaceBody", body: members }, range);
   }
 
   #methodDefinition(node) {
@@ -1580,14 +1554,11 @@ export class Converter {
   #constructorKey(node) {
     const start = this.ast.text.indexOf("constructor", node.getStart(this.ast));
     const range = [start, start + "constructor".length];
-    return {
-      type: "Identifier",
-      decorators: [],
-      name: "constructor",
-      optional: false,
+    return this.#node(
+      node,
+      { type: "Identifier", decorators: [], name: "constructor", optional: false },
       range,
-      loc: getLocFor(range[0], range[1], this.ast),
-    };
+    );
   }
 
   #binary(node) {
@@ -1717,13 +1688,11 @@ export class Converter {
     const rawInner = raw.slice(1, tail ? -1 : -2);
     const start = node.getStart(this.ast);
     const range = [start, node.getEnd()];
-    return {
-      type: "TemplateElement",
-      tail,
-      value: { cooked: node.text, raw: rawInner },
+    return this.#node(
+      node,
+      { type: "TemplateElement", tail, value: { cooked: node.text, raw: rawInner } },
       range,
-      loc: getLocFor(range[0], range[1], this.ast),
-    };
+    );
   }
 
   #templateExpression(node) {

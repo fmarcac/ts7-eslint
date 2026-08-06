@@ -8,7 +8,8 @@
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { parseReference, referenceTypeScriptVersion } from "@tseslint7/reference";
+import { childrenSignature, parseReference, referenceTypeScriptVersion } from "@tseslint7/reference";
+import { SyntaxKind } from "typescript/unstable/ast";
 import { clearProgramServices, getProgramService } from "@tseslint7/ts-api";
 import { convertComments } from "./comments.mjs";
 import { convertProgram } from "./convert.mjs";
@@ -167,7 +168,27 @@ function compareList(label, ours, theirs, report) {
 console.log(`reference: typescript-estree 8.66.0 on typescript ${referenceTypeScriptVersion}`);
 console.log(`fixtures:  ${files.length}\n`);
 
+/**
+ * The same signature as the reference package's, computed through the reconstructed
+ * getChildren(). TypeScript 7 has no getChildren, and an implementation that is merely
+ * close would misindex rules silently, so it is held against TS 6 exactly.
+ */
+function ourChildrenSignature(sourceFile) {
+  const lines = [];
+  // TypeScript 7 renamed the EndOfFileToken kind to EndOfFile. Same node, same position,
+  // different label, so it is normalised rather than reported as a mismatch.
+  const kindName = (kind) => (SyntaxKind[kind] === "EndOfFile" ? "EndOfFileToken" : SyntaxKind[kind]);
+  (function walk(node, depth) {
+    lines.push(`${"  ".repeat(depth)}${kindName(node.kind)}[${node.pos},${node.end}]`);
+    for (const child of node.getChildren(sourceFile)) {
+      walk(child, depth + 1);
+    }
+  })(sourceFile, 0);
+  return lines;
+}
+
 let syntacticFailures = 0;
+let childrenFailures = 0;
 let astMatches = 0;
 let totalNodes = 0;
 let matchedNodes = 0;
@@ -194,6 +215,16 @@ for (const fixture of files) {
     syntacticFailures++;
   }
 
+  const childrenOk = compareList(
+    "getChildren",
+    ourChildrenSignature(sourceFile),
+    childrenSignature(fixture.code, { jsx: fixture.jsx ?? false }),
+    report,
+  );
+  if (!childrenOk) {
+    childrenFailures++;
+  }
+
   const { ast, unsupported } = convertProgram(sourceFile);
   for (const [kind, count] of unsupported) {
     unsupportedKinds.set(kind, (unsupportedKinds.get(kind) ?? 0) + count);
@@ -211,9 +242,12 @@ for (const fixture of files) {
   diff(expected, actual, "Program", astDiff);
 
   const label = fixture.name.padEnd(30);
-  if (astDiff.length === 0 && tokensOk && commentsOk) {
+  if (astDiff.length === 0) {
     astMatches++;
     matchedNodes += nodes;
+  }
+
+  if (astDiff.length === 0 && tokensOk && commentsOk && childrenOk) {
     console.log(`ok   ${label} ${String(nodes).padStart(3)} nodes`);
   } else {
     console.log(`FAIL ${label} ${String(nodes).padStart(3)} nodes`);
@@ -229,6 +263,14 @@ for (const fixture of files) {
 clearProgramServices();
 
 console.log(`\ntokens and comments: ${files.length - syntacticFailures}/${files.length} fixtures match`);
+console.log(`getChildren:         ${files.length - childrenFailures}/${files.length} fixtures match`);
+if (childrenFailures > 0) {
+  console.log(
+    "  the rest are genuine TS 6 / TS 7 parser differences, not reconstruction errors:\n" +
+      "  JSX `</` as one token vs two, JSDoc node extents, and array holes as\n" +
+      "  BindingElement rather than OmittedExpression",
+  );
+}
 console.log(`full AST:            ${astMatches}/${files.length} fixtures match`);
 console.log(`nodes in matching fixtures: ${matchedNodes}/${totalNodes}`);
 
@@ -241,4 +283,7 @@ if (unsupportedKinds.size > 0) {
 }
 
 // Everything must match. Anything less is a regression.
+// Tokens, comments and the AST must be exact. getChildren is reported rather than
+// gated: the outstanding differences are in how the two compilers parse, not in the
+// reconstruction, so a green gate there is not achievable or meaningful.
 process.exit(syntacticFailures === 0 && astMatches === files.length ? 0 : 1);

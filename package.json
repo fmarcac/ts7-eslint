@@ -7,10 +7,13 @@
     "node": ">=22.15"
   },
   "scripts": {
+    "bench": "node tools/bench/run.mjs",
+    "coverage:estree": "node packages/typescript-estree/coverage.mjs",
     "smoke:ts-api": "node packages/ts-api/smoke.mjs",
     "spike:hook": "node spikes/s2-hook/run.mjs",
+    "test": "pnpm test:estree && pnpm smoke:ts-api && pnpm spike:hook && pnpm test:parser",
+    "test:corpus": "node packages/typescript-estree/differential-corpus.mjs",
     "test:estree": "node packages/typescript-estree/differential.mjs",
-    "test:parser": "node packages/parser/test.mjs",
-    "test": "pnpm test:estree && pnpm smoke:ts-api && pnpm spike:hook && pnpm test:parser"
+    "test:parser": "node packages/parser/test.mjs"
   }
 }

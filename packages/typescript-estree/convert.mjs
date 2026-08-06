@@ -53,6 +53,12 @@ const LOGICAL_OPERATORS = new Set([
   SyntaxKind.QuestionQuestionToken,
 ]);
 
+/** Declarations that introduce a type rather than a value, which changes the export kind. */
+const TYPE_ONLY_DECLARATIONS = new Set([
+  SyntaxKind.InterfaceDeclaration,
+  SyntaxKind.TypeAliasDeclaration,
+]);
+
 /** SyntaxKind to the TSESTree type for keyword type nodes. */
 const KEYWORD_TYPES = new Map([
   [SyntaxKind.AnyKeyword, "TSAnyKeyword"],
@@ -136,6 +142,8 @@ export class Converter {
     }
 
     const isDefault = this.#has(node, ModifierFlags.Default);
+    // ESTree records on the wrapper whether a type or a value is being exported.
+    const exportKind = TYPE_ONLY_DECLARATIONS.has(node.kind) ? "type" : "value";
     const outerStart = node.getStart(this.ast);
     const declaration = this.convert(node);
     if (!declaration) {
@@ -157,12 +165,12 @@ export class Converter {
 
     const range = [outerStart, node.getEnd()];
     const wrapper = isDefault
-      ? { type: "ExportDefaultDeclaration", declaration, exportKind: "value" }
+      ? { type: "ExportDefaultDeclaration", declaration, exportKind }
       : {
           type: "ExportNamedDeclaration",
           attributes: [],
           declaration,
-          exportKind: "value",
+          exportKind,
           source: null,
           specifiers: [],
         };
@@ -275,13 +283,17 @@ export class Converter {
     }
 
     const target = node.initializer
-      ? this.#node(node, {
-          type: "AssignmentPattern",
-          decorators: [],
-          left: this.convert(node.name),
-          optional: false,
-          right: this.convert(node.initializer),
-        })
+      ? this.#node(
+          node,
+          {
+            type: "AssignmentPattern",
+            decorators: [],
+            left: this.convert(node.name),
+            optional: false,
+            right: this.convert(node.initializer),
+          },
+          [node.name.getStart(this.ast), node.getEnd()],
+        )
       : this.convert(node.name);
 
     if (node.parent.kind !== SyntaxKind.ObjectBindingPattern) {
@@ -649,6 +661,7 @@ export class Converter {
           id: this.#child(node.name),
           implements: this.#heritage(node, SyntaxKind.ImplementsKeyword),
           superClass: this.#superClass(node),
+          superTypeArguments: this.#superTypeArguments(node),
           typeParameters: this.#typeParameters(node),
         });
 
@@ -679,7 +692,9 @@ export class Converter {
       case SyntaxKind.Constructor:
       case SyntaxKind.GetAccessor:
       case SyntaxKind.SetAccessor:
-        return this.#methodDefinition(node);
+        return node.parent?.kind === SyntaxKind.ObjectLiteralExpression
+          ? this.#objectMethod(node)
+          : this.#methodDefinition(node);
 
       case SyntaxKind.SemicolonClassElement:
         return null;
@@ -865,7 +880,8 @@ export class Converter {
           type: "TSTypeParameter",
           const: this.#has(node, ModifierFlags.Const),
           constraint: node.constraint ? this.convert(node.constraint) : undefined,
-          default: node.default ? this.convert(node.default) : undefined,
+          // TS 7 renamed this field from `default` to `defaultType`.
+          default: node.defaultType ? this.convert(node.defaultType) : undefined,
           in: this.#has(node, ModifierFlags.In),
           name: this.convert(node.name),
           out: this.#has(node, ModifierFlags.Out),
@@ -923,7 +939,7 @@ export class Converter {
           constraint: this.convert(node.typeParameter.constraint),
           key: this.convert(node.typeParameter.name),
           nameType: this.#child(node.nameType),
-          optional: this.#mappedModifier(node.questionToken),
+          optional: this.#mappedModifier(node.questionToken) ?? false,
           readonly: this.#mappedModifier(node.readonlyToken),
           typeAnnotation: this.#child(node.type),
         });
@@ -1065,6 +1081,22 @@ export class Converter {
           typeAnnotation: this.#typeAnnotation(node.type),
         });
 
+      case SyntaxKind.CallSignature:
+        return this.#node(node, {
+          type: "TSCallSignatureDeclaration",
+          params: this.#convertAll(node.parameters),
+          returnType: this.#typeAnnotation(node.type),
+          typeParameters: this.#typeParameters(node),
+        });
+
+      case SyntaxKind.ConstructSignature:
+        return this.#node(node, {
+          type: "TSConstructSignatureDeclaration",
+          params: this.#convertAll(node.parameters),
+          returnType: this.#typeAnnotation(node.type),
+          typeParameters: this.#typeParameters(node),
+        });
+
       case SyntaxKind.MethodSignature:
         return this.#node(node, {
           type: "TSMethodSignature",
@@ -1076,6 +1108,7 @@ export class Converter {
           readonly: this.#has(node, ModifierFlags.Readonly),
           returnType: this.#typeAnnotation(node.type),
           static: this.#has(node, ModifierFlags.Static),
+          typeParameters: this.#typeParameters(node),
         });
 
       case SyntaxKind.TypeAliasDeclaration:
@@ -1092,7 +1125,7 @@ export class Converter {
           type: "TSInterfaceDeclaration",
           body: this.#interfaceBody(node),
           declare: this.#has(node, ModifierFlags.Ambient),
-          extends: this.#heritage(node, SyntaxKind.ExtendsKeyword),
+          extends: this.#heritage(node, SyntaxKind.ExtendsKeyword, "TSInterfaceHeritage"),
           id: this.convert(node.name),
           typeParameters: this.#typeParameters(node),
         });
@@ -1246,7 +1279,12 @@ export class Converter {
       case SyntaxKind.TypeQuery:
         return this.#node(node, {
           type: "TSTypeQuery",
-          exprName: this.convert(node.exprName),
+          // `typeof this` parses its entity name as an ordinary identifier, but ESTree
+          // spells it as a ThisExpression.
+          exprName:
+            node.exprName.kind === SyntaxKind.Identifier && node.exprName.text === "this"
+              ? this.#node(node.exprName, { type: "ThisExpression" })
+              : this.convert(node.exprName),
           typeArguments: this.#typeArguments(node),
         });
 
@@ -1315,12 +1353,13 @@ export class Converter {
     }
 
     if (node.dotDotDotToken) {
+      const argument = this.convert(node.name);
       return this.#node(node, {
         type: "RestElement",
-        argument: base,
+        argument,
         decorators: this.#decorators(node),
         optional: false,
-        typeAnnotation: undefined,
+        typeAnnotation: this.#typeAnnotation(node.type),
         value: undefined,
       });
     }
@@ -1353,6 +1392,14 @@ export class Converter {
     if (accessibility === undefined && !readonly && !override) {
       return inner;
     }
+    // The wrapped parameter begins at its binding name; the modifiers belong to the
+    // TSParameterProperty around it.
+    const nameStart = node.name?.getStart(this.ast);
+    if (inner && nameStart !== undefined && inner.range[0] !== nameStart) {
+      inner.range = [nameStart, inner.range[1]];
+      inner.loc = getLocFor(nameStart, inner.range[1], this.ast);
+    }
+
     return this.#node(node, {
       type: "TSParameterProperty",
       accessibility,
@@ -1377,8 +1424,7 @@ export class Converter {
     if (!args || args.length === 0) {
       return undefined;
     }
-    // NodeArray carries its own pos/end, which bracket the angle brackets.
-    const range = [args.pos - 1, args.end + 1];
+    const range = this.#angleBracketRange(args);
     return this.#node(
       node,
       { type: "TSTypeParameterInstantiation", params: this.#convertAll(args) },
@@ -1392,12 +1438,31 @@ export class Converter {
     if (!params || params.length === 0) {
       return undefined;
     }
-    const range = [params.pos - 1, params.end + 1];
+    const range = this.#angleBracketRange(params);
     return this.#node(
       node,
       { type: "TSTypeParameterDeclaration", params: this.#convertAll(params) },
       range,
     );
+  }
+
+  /**
+   * The span of a `<...>` list including its brackets.
+   *
+   * A NodeArray's pos and end sit inside the brackets but are not always flush against
+   * them, so the brackets are located rather than assumed to be one character away.
+   */
+  #angleBracketRange(array) {
+    const text = this.ast.text;
+    let start = array.pos;
+    while (start > 0 && text[start] !== "<") {
+      start--;
+    }
+    let end = array.end;
+    while (end < text.length && text[end] !== ">") {
+      end++;
+    }
+    return [start, Math.min(end + 1, text.length)];
   }
 
   /** A mapped type's `+`/`-` modifier, or true when the token is bare. */
@@ -1464,14 +1529,14 @@ export class Converter {
     );
   }
 
-  #heritage(node, keyword) {
+  #heritage(node, keyword, type = "TSClassImplements") {
     const clause = (node.heritageClauses ?? []).find((c) => c.token === keyword);
     if (!clause) {
       return [];
     }
     return clause.types.map((t) =>
       this.#node(t, {
-        type: "TSClassImplements",
+        type,
         expression: this.convert(t.expression),
         typeArguments: this.#typeArguments(t),
       }),
@@ -1483,6 +1548,15 @@ export class Converter {
       (c) => c.token === SyntaxKind.ExtendsKeyword,
     );
     return clause?.types?.[0] ? this.convert(clause.types[0].expression) : null;
+  }
+
+  /** Type arguments of the extends clause, which ESTree hangs off the class itself. */
+  #superTypeArguments(node) {
+    const clause = (node.heritageClauses ?? []).find(
+      (c) => c.token === SyntaxKind.ExtendsKeyword,
+    );
+    const first = clause?.types?.[0];
+    return first ? this.#typeArguments(first) : undefined;
   }
 
   #classBody(node) {
@@ -1509,27 +1583,9 @@ export class Converter {
             ? "set"
             : "method";
 
-    // The FunctionExpression covers the signature and body, not the member name.
-    const valueStart = node.parameters.pos - 1;
-    const valueRange = [valueStart, node.getEnd()];
-    const value = {
+    const value = this.#functionValue(node);
       // An abstract method or an overload signature has no body, and ESTree gives that a
       // distinct node type rather than a FunctionExpression with a null body.
-      type: node.body ? "FunctionExpression" : "TSEmptyBodyFunctionExpression",
-      async: this.#has(node, ModifierFlags.Async),
-      body: this.#child(node.body),
-      declare: false,
-      expression: false,
-      generator: node.asteriskToken != null,
-      id: null,
-      params: this.#convertAll(node.parameters),
-      returnType: this.#typeAnnotation(node.type),
-      typeParameters: this.#typeParameters(node),
-      range: valueRange,
-      loc: getLocFor(valueRange[0], valueRange[1], this.ast),
-    };
-    this.esTreeNodeToTSNodeMap.set(value, node);
-
     const key =
       node.kind === SyntaxKind.Constructor
         ? this.#constructorKey(node)
@@ -1548,6 +1604,51 @@ export class Converter {
       override: this.#has(node, ModifierFlags.Override),
       static: this.#has(node, ModifierFlags.Static),
       value,
+    });
+  }
+
+  /**
+   * The FunctionExpression behind a method or accessor.
+   *
+   * It covers the signature and body but not the member name, and the signature starts
+   * at the type parameter list when there is one rather than at the parameters.
+   */
+  #functionValue(node) {
+    const start = (node.typeParameters ?? node.parameters).pos - 1;
+    return this.#node(
+      node,
+      {
+        type: node.body ? "FunctionExpression" : "TSEmptyBodyFunctionExpression",
+        async: this.#has(node, ModifierFlags.Async),
+        body: this.#child(node.body),
+        declare: false,
+        expression: false,
+        generator: node.asteriskToken != null,
+        id: null,
+        params: this.#convertAll(node.parameters),
+        returnType: this.#typeAnnotation(node.type),
+        typeParameters: this.#typeParameters(node),
+      },
+      [start, node.getEnd()],
+    );
+  }
+
+  #objectMethod(node) {
+    const kind =
+      node.kind === SyntaxKind.GetAccessor
+        ? "get"
+        : node.kind === SyntaxKind.SetAccessor
+          ? "set"
+          : "init";
+    return this.#node(node, {
+      type: "Property",
+      computed: node.name?.kind === SyntaxKind.ComputedPropertyName,
+      key: this.#propertyName(node.name),
+      kind,
+      method: kind === "init",
+      optional: false,
+      shorthand: false,
+      value: this.#functionValue(node),
     });
   }
 

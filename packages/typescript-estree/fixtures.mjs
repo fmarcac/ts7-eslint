@@ -261,6 +261,12 @@ type Q = typeof globalThis;
 type Rec = A.B.C<D>;
 type Opt = { a?: string; readonly b: number };
 declare function assertIt(x: unknown): asserts x is string;
+type Callable = { <T>(x: T): T; new (y: string): object; (z: number): void };
+declare global {
+  interface Augmented {
+    [Symbol.iterator]: { <T>(source: ReadonlyArray<T>): T };
+  }
+}
 abstract class Shape { abstract area(): number; }
 `,
   },

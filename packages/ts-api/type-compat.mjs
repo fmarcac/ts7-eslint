@@ -132,6 +132,35 @@ function lazyHandle(object, name, resolve) {
 }
 
 /**
+ * The array form of lazyHandle, for fields holding a list of handle ids.
+ *
+ * Same re-entrancy problem: getAliasTypeArguments() reads this.aliasTypeArguments.
+ */
+function lazyHandleArray(object, name, resolve) {
+  const raw = object[name];
+  if (!Array.isArray(raw) || raw.length === 0 || typeof raw[0] !== "number") {
+    return;
+  }
+  let cached;
+  let resolving = false;
+  defineGetter(object, name, function () {
+    if (cached !== undefined) {
+      return cached;
+    }
+    if (resolving) {
+      return raw;
+    }
+    resolving = true;
+    try {
+      cached = (resolve.call(this) ?? []).map(adaptType);
+    } finally {
+      resolving = false;
+    }
+    return cached;
+  });
+}
+
+/**
  * Resolve a type's handle ids to the objects they denote.
  *
  * TS 6 stored `target`, `symbol` and `aliasSymbol` as objects. TS 7 stores handle ids and
@@ -143,6 +172,13 @@ function adaptType(type) {
     return type;
   }
   adapted.add(type);
+
+  // Not every type object comes from the same class, so patching the prototype of one
+  // sample is not enough. Any type that arrives without the restored surface gets its
+  // own prototype patched, once.
+  if (typeof type.isUnionOrIntersection !== "function") {
+    installTypeMethods(Object.getPrototypeOf(type));
+  }
   lazyHandle(type, "target", function () {
     return adaptType(this.getTarget());
   });
@@ -152,6 +188,23 @@ function adaptType(type) {
   lazyHandle(type, "aliasSymbol", function () {
     return adaptSymbol(this.getAliasSymbol());
   });
+
+  // Type also keeps four *lists* of handle ids. no-unnecessary-type-assertion reads
+  // `type.aliasTypeArguments` directly and recurses into the elements, so a bare number
+  // reaches code expecting a Type.
+  lazyHandleArray(type, "aliasTypeArguments", function () {
+    return this.getAliasTypeArguments();
+  });
+  lazyHandleArray(type, "typeParameters", function () {
+    return this.getTypeParameters();
+  });
+  lazyHandleArray(type, "outerTypeParameters", function () {
+    return this.getOuterTypeParameters();
+  });
+  lazyHandleArray(type, "localTypeParameters", function () {
+    return this.getLocalTypeParameters();
+  });
+
   return type;
 }
 
@@ -366,7 +419,6 @@ const SYMBOL_RETURNING = [
   "getPropertyOfType",
   "getResolvedSymbol",
   "getShorthandAssignmentValueSymbol",
-  "getSymbolAtLocation",
   "getSymbolAtPosition",
   "resolveName",
 ];
@@ -383,7 +435,6 @@ const TYPE_RETURNING = [
   "getReturnTypeOfSignature",
   "getRestTypeOfSignature",
   "getTypeArguments",
-  "getTypeAtLocation",
   "getTypeAtPosition",
   "getTypeFromTypeNode",
   "getTypeOfSymbol",
@@ -454,6 +505,41 @@ export function installTypeCompat(checker) {
     // Absent from 7.0 and 7.1 alike, so it is supplied rather than bridged.
   if (typeof checker.getAwaitedType !== "function") {
     define(checker, "getAwaitedType", (type) => adaptType(computeAwaitedType(checker, type)));
+  }
+
+  // Likewise absent. The contextual type of a call argument is the type of the parameter
+  // it binds to in the resolved signature, and getParameterType already handles rest
+  // parameters, so this is a short composition rather than a reimplementation.
+  if (typeof checker.getContextualTypeForArgumentAtIndex !== "function") {
+    define(checker, "getContextualTypeForArgumentAtIndex", (call, index) => {
+      const signature = checker.getResolvedSignature(call);
+      return signature ? adaptType(checker.getParameterType(signature, index)) : undefined;
+    });
+  }
+
+  // Every checker call is an IPC round trip to the Go process, and rules ask for the
+  // type of the same node repeatedly. Types are immutable within a snapshot, so the
+  // answer can be memoised per node; the program service drops the cache whenever the
+  // snapshot, and therefore the checker, is replaced.
+  for (const name of ["getTypeAtLocation", "getSymbolAtLocation"]) {
+    const original = checker[name];
+    if (typeof original !== "function") {
+      continue;
+    }
+    const cache = new WeakMap();
+    const adapt = name === "getTypeAtLocation" ? adaptType : adaptSymbol;
+    define(checker, name, function (nodeOrNodes) {
+      // The array overload batches on the server already; leave it alone.
+      if (Array.isArray(nodeOrNodes)) {
+        return original.call(checker, nodeOrNodes).map(adapt);
+      }
+      if (cache.has(nodeOrNodes)) {
+        return cache.get(nodeOrNodes);
+      }
+      const result = adapt(original.call(checker, nodeOrNodes));
+      cache.set(nodeOrNodes, result);
+      return result;
+    });
   }
 
   wrapReturning(checker, SYMBOL_RETURNING, adaptSymbol);

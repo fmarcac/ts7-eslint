@@ -1,0 +1,13 @@
+{
+  "name": "@tseslint7/bench-ts7",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@tseslint7/parser": "workspace:*",
+    "@tseslint7/resolution-hook": "workspace:*",
+    "@typescript-eslint/eslint-plugin": "8.66.0",
+    "eslint": "10.8.0",
+    "typescript": "7.0.2"
+  }
+}

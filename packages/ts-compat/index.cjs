@@ -86,6 +86,54 @@ function displayPartsToString(parts) {
   return parts ? parts.map((part) => part.text).join("") : "";
 }
 
+/**
+ * TypeScript 6's getCombinedModifierFlags.
+ *
+ * A variable's modifiers sit on the enclosing statement, not the declaration, so the old
+ * API walked up the VariableDeclaration to VariableDeclarationList to VariableStatement
+ * chain and merged what it found. TypeScript 7 exposes `modifierFlags` per node, which
+ * makes the walk simple but does not remove the need for it.
+ */
+function getCombinedModifierFlags(node) {
+  let current = node;
+  if (current?.kind === SyntaxKind.BindingElement) {
+    while (current && current.kind === SyntaxKind.BindingElement) {
+      current = current.parent?.parent;
+    }
+  }
+  let flags = current?.modifierFlags ?? 0;
+  if (current?.kind === SyntaxKind.VariableDeclaration) {
+    current = current.parent;
+    flags |= current?.modifierFlags ?? 0;
+    if (current?.kind === SyntaxKind.VariableDeclarationList) {
+      current = current.parent;
+      flags |= current?.modifierFlags ?? 0;
+    }
+  }
+  return flags;
+}
+
+/**
+ * TypeScript 6's getNameOfDeclaration.
+ *
+ * Most declarations simply carry `name`. The cases that do not are the ones where the
+ * name is derived from an assignment or an expression, which the old API resolved for
+ * callers.
+ */
+function getNameOfDeclaration(declaration) {
+  if (!declaration) {
+    return undefined;
+  }
+  switch (declaration.kind) {
+    case SyntaxKind.BinaryExpression:
+      return declaration.left;
+    case SyntaxKind.ExportAssignment:
+      return declaration.expression;
+    default:
+      return declaration.name;
+  }
+}
+
 module.exports = {
   ...is,
   ...ast,
@@ -93,6 +141,8 @@ module.exports = {
 
   displayPartsToString,
   forEachChild,
+  getCombinedModifierFlags,
+  getNameOfDeclaration,
   isClassLike,
   isFunctionLike,
   isMethodSignature,

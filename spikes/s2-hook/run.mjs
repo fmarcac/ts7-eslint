@@ -8,7 +8,7 @@
 import { readFileSync, readdirSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
-import { assertNotAlreadyLoaded, installResolutionHook } from "@tseslint7/resolution-hook";
+import { assertNotAlreadyLoaded, installResolutionHook } from "@ts7-eslint/resolution-hook";
 
 const redirects = [];
 assertNotAlreadyLoaded();
@@ -17,7 +17,7 @@ installResolutionHook({ onRedirect: (specifier, from) => redirects.push({ specif
 // Only require upstream *after* the hook is installed.
 const require = createRequire(import.meta.url);
 const plugin = require("@typescript-eslint/eslint-plugin");
-const shim = require("@tseslint7/ts-compat");
+const shim = require("@ts7-eslint/ts-compat");
 const { Linter } = await import("eslint");
 
 const ruleIds = Object.keys(plugin.rules);

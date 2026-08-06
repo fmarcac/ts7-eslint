@@ -6,29 +6,45 @@ settings:
 
 importers:
 
-  .: {}
-
-  packages/parser:
+  .:
     dependencies:
-      '@tseslint7/ts-api':
-        specifier: workspace:*
-        version: link:../ts-api
-      '@tseslint7/typescript-estree':
-        specifier: workspace:*
-        version: link:../typescript-estree
+      '@typescript-eslint/eslint-plugin':
+        specifier: 8.66.0
+        version: 8.66.0(@typescript-eslint/parser@8.66.0(eslint@10.8.0)(typescript@7.0.2))(eslint@10.8.0)(typescript@7.0.2)
       '@typescript-eslint/scope-manager':
         specifier: 8.66.0
         version: 8.66.0
       '@typescript-eslint/visitor-keys':
         specifier: 8.66.0
         version: 8.66.0
-    devDependencies:
-      '@tseslint7/resolution-hook':
+      eslint:
+        specifier: ^9.0.0 || ^10.0.0
+        version: 10.8.0
+      typescript:
+        specifier: ^7.0.0
+        version: 7.0.2
+
+  packages/parser:
+    dependencies:
+      '@typescript-eslint/scope-manager':
+        specifier: 8.66.0
+        version: 8.66.0
+      '@typescript-eslint/visitor-keys':
+        specifier: 8.66.0
+        version: 8.66.0
+      '@ts7-eslint/ts-api':
         specifier: workspace:*
-        version: link:../resolution-hook
+        version: link:../ts-api
+      '@ts7-eslint/typescript-estree':
+        specifier: workspace:*
+        version: link:../typescript-estree
+    devDependencies:
       '@typescript-eslint/eslint-plugin':
         specifier: 8.66.0
         version: 8.66.0(@typescript-eslint/parser@8.66.0(eslint@10.8.0)(typescript@7.0.2))(eslint@10.8.0)(typescript@7.0.2)
+      '@ts7-eslint/resolution-hook':
+        specifier: workspace:*
+        version: link:../resolution-hook
       eslint:
         specifier: 10.8.0
         version: 10.8.0
@@ -38,7 +54,7 @@ importers:
 
   packages/resolution-hook:
     dependencies:
-      '@tseslint7/ts-compat':
+      '@ts7-eslint/ts-compat':
         specifier: workspace:*
         version: link:../ts-compat
 
@@ -56,11 +72,11 @@ importers:
 
   packages/typescript-estree:
     dependencies:
-      '@tseslint7/ts-api':
+      '@ts7-eslint/ts-api':
         specifier: workspace:*
         version: link:../ts-api
     devDependencies:
-      '@tseslint7/reference':
+      '@ts7-eslint/reference':
         specifier: workspace:*
         version: link:../../tools/reference
       typescript:
@@ -69,15 +85,15 @@ importers:
 
   spikes/s2-hook:
     dependencies:
-      '@tseslint7/resolution-hook':
-        specifier: workspace:*
-        version: link:../../packages/resolution-hook
-      '@tseslint7/ts-compat':
-        specifier: workspace:*
-        version: link:../../packages/ts-compat
       '@typescript-eslint/eslint-plugin':
         specifier: 8.66.0
         version: 8.66.0(@typescript-eslint/parser@8.66.0(eslint@10.8.0)(typescript@7.0.2))(eslint@10.8.0)(typescript@7.0.2)
+      '@ts7-eslint/resolution-hook':
+        specifier: workspace:*
+        version: link:../../packages/resolution-hook
+      '@ts7-eslint/ts-compat':
+        specifier: workspace:*
+        version: link:../../packages/ts-compat
       eslint:
         specifier: 10.8.0
         version: 10.8.0
@@ -102,18 +118,18 @@ importers:
 
   tools/bench-ts7:
     dependencies:
-      '@tseslint7/parser':
-        specifier: workspace:*
-        version: link:../../packages/parser
-      '@tseslint7/resolution-hook':
-        specifier: workspace:*
-        version: link:../../packages/resolution-hook
-      '@tseslint7/ts-api':
-        specifier: workspace:*
-        version: link:../../packages/ts-api
       '@typescript-eslint/eslint-plugin':
         specifier: 8.66.0
         version: 8.66.0(@typescript-eslint/parser@8.66.0(eslint@10.8.0)(typescript@7.0.2))(eslint@10.8.0)(typescript@7.0.2)
+      '@ts7-eslint/parser':
+        specifier: workspace:*
+        version: link:../../packages/parser
+      '@ts7-eslint/resolution-hook':
+        specifier: workspace:*
+        version: link:../../packages/resolution-hook
+      '@ts7-eslint/ts-api':
+        specifier: workspace:*
+        version: link:../../packages/ts-api
       eslint:
         specifier: 10.8.0
         version: 10.8.0

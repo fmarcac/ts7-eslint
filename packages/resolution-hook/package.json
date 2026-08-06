@@ -1,5 +1,5 @@
 {
-  "name": "@tseslint7/resolution-hook",
+  "name": "@ts7-eslint/resolution-hook",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -7,6 +7,6 @@
     ".": "./index.mjs"
   },
   "dependencies": {
-    "@tseslint7/ts-compat": "workspace:*"
+    "@ts7-eslint/ts-compat": "workspace:*"
   }
 }

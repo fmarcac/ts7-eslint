@@ -1,4 +1,4 @@
-// S2: wire upstream @typescript-eslint to our stack without touching the consumer's
+// Wire upstream @typescript-eslint to this stack without touching the consumer's
 // package.json.
 //
 // The alternative is npm `overrides`, which means a multi-line block spelled differently
@@ -11,12 +11,11 @@
 // anything else in the process are unaffected.
 
 import { createRequire, registerHooks } from "node:module";
-import { pathToFileURL } from "node:url";
 
 const require = createRequire(import.meta.url);
 
-/** Specifier to redirect, and the package that stands in for it. */
-const REDIRECTS = new Map([["typescript", "@tseslint7/ts-compat"]]);
+/** Specifier to redirect, and the module that stands in for it. */
+const REDIRECTS = new Map([["typescript", "../ts-compat/index.cjs"]]);
 
 /** Only requesters inside these subtrees are redirected. */
 const SUBTREES = ["/node_modules/@typescript-eslint/", "/node_modules/ts-api-utils/"];
@@ -26,13 +25,13 @@ function isRedirectedRequester(parentURL) {
 }
 
 export function installResolutionHook({ onRedirect } = {}) {
-  // Resolve targets eagerly, from *our* location. Resolving them lazily from the
-  // requester would fail under pnpm, where @typescript-eslint's directory cannot see
-  // our packages at all.
+  // Resolve targets from *our* location, by path rather than by package name. Resolving
+  // them from the requester would fail under pnpm, where @typescript-eslint's directory
+  // cannot see our modules at all.
   const resolved = new Map(
     [...REDIRECTS].map(([specifier, target]) => [
       specifier,
-      pathToFileURL(require.resolve(target)).href,
+      new URL(target, import.meta.url).href,
     ]),
   );
 

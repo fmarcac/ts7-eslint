@@ -129,9 +129,9 @@ const givenUp = new WeakSet();
 let batches = 0;
 let batched = 0;
 let attempts = 0;
-/** Kinds asked about that no window could cover. Only collected under TSESLINT7_TIMING. */
+/** Kinds asked about that no window could cover. Only collected under TS7_ESLINT_TIMING. */
 const missedKinds = new Map();
-const trackMisses = process.env.TSESLINT7_TIMING === "1";
+const trackMisses = process.env.TS7_ESLINT_TIMING === "1";
 
 export function batchStats() {
   return {

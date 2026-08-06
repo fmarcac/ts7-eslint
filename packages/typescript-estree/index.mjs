@@ -1,7 +1,7 @@
-// @tseslint7/typescript-estree
+// @ts7-eslint/typescript-estree
 //
 // Converts a TypeScript 7 SourceFile into the AST ESLint expects. The compiler
-// connection itself belongs to @tseslint7/ts-api; this package only transforms what that
+// connection itself belongs to @ts7-eslint/ts-api; this package only transforms what that
 // package hands it.
 
 export { convertComments } from "./comments.mjs";

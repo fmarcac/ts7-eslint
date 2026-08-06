@@ -1,7 +1,7 @@
-// @tseslint7/parser
+// @ts7-eslint/parser
 //
-// The ESLint entry point. Assembles the compiler connection (@tseslint7/ts-api) and the
-// AST conversion (@tseslint7/typescript-estree) into what ESLint asks a parser for, and
+// The ESLint entry point. Assembles the compiler connection (@ts7-eslint/ts-api) and the
+// AST conversion (@ts7-eslint/typescript-estree) into what ESLint asks a parser for, and
 // exposes parserServices in the shape upstream rules already expect.
 //
 // Scope analysis is upstream's @typescript-eslint/scope-manager, used verbatim: it runs
@@ -10,8 +10,8 @@
 
 import { existsSync } from "node:fs";
 import { dirname, isAbsolute, join, parse as parsePath, resolve } from "node:path";
-import { getProgramService } from "@tseslint7/ts-api";
-import { convertSourceFile } from "@tseslint7/typescript-estree";
+import { getProgramService } from "../ts-api/index.mjs";
+import { convertSourceFile } from "../typescript-estree/index.mjs";
 import { analyze } from "@typescript-eslint/scope-manager";
 import { visitorKeys } from "@typescript-eslint/visitor-keys";
 
@@ -47,7 +47,7 @@ function resolveProject(options) {
 
   if (!filePath) {
     throw new Error(
-      "@tseslint7/parser needs either parserOptions.project or a filePath to locate a tsconfig.",
+      "The ts7-eslint parser needs either parserOptions.project or a filePath to locate a tsconfig.",
     );
   }
 

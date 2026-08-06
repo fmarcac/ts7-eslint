@@ -8,8 +8,8 @@
 
 import { readFileSync, readdirSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
-import { parseReference, referenceTypeScriptVersion } from "@tseslint7/reference";
-import { clearProgramServices, getProgramService } from "@tseslint7/ts-api";
+import { parseReference, referenceTypeScriptVersion } from "@ts7-eslint/reference";
+import { clearProgramServices, getProgramService } from "@ts7-eslint/ts-api";
 import { convertProgram } from "./convert.mjs";
 
 const [tsconfigArg, rootArg, excludeArg] = process.argv.slice(2);

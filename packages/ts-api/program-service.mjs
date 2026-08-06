@@ -66,10 +66,10 @@ class ProgramService {
       // where optimisation is worth spending is how much of that time the server spends
       // computing and how much is transport. The server splits the two when asked, at
       // the cost of timing every request, so this is opt-in.
-      collectTiming: process.env.TSESLINT7_TIMING === "1",
+      collectTiming: process.env.TS7_ESLINT_TIMING === "1",
     });
 
-    if (process.env.TSESLINT7_TIMING === "1") {
+    if (process.env.TS7_ESLINT_TIMING === "1") {
       countRequestsByMethod(this.#api.client);
     }
 
@@ -199,7 +199,7 @@ class ProgramService {
     return this.checker.getSymbolAtLocation(nodes);
   }
 
-  /** Round-trip, server, and transport time. Empty unless TSESLINT7_TIMING=1. */
+  /** Round-trip, server, and transport time. Empty unless TS7_ESLINT_TIMING=1. */
   get timing() {
     return this.#api.getTimingInfo();
   }
@@ -222,7 +222,7 @@ export function getProgramService({ cwd = process.cwd(), tsconfigPath }) {
 /**
  * What the run spent talking to typescript-go, summed over every project.
  *
- * Returns undefined unless TSESLINT7_TIMING=1 was set before the first parse.
+ * Returns undefined unless TS7_ESLINT_TIMING=1 was set before the first parse.
  */
 export function programTiming() {
   const totals = { roundTripMs: 0, serverTimeMs: 0, bytesSent: 0, bytesReceived: 0, requestCount: 0 };

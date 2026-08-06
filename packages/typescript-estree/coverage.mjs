@@ -9,7 +9,7 @@
 
 import { readdirSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
-import { clearProgramServices, getProgramService } from "@tseslint7/ts-api";
+import { clearProgramServices, getProgramService } from "@ts7-eslint/ts-api";
 import { convertProgram } from "./convert.mjs";
 
 const [tsconfigArg, rootArg, excludeArg] = process.argv.slice(2);

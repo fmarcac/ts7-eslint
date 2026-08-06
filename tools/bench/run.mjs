@@ -90,7 +90,7 @@ function benchmark({ exclude, name, root, tsconfig }) {
     .filter((file) => !pattern?.test(file))
     .sort()
     .slice(0, limit);
-  const listFile = join(mkdtempSync(join(tmpdir(), "tseslint7-bench-")), "files.txt");
+  const listFile = join(mkdtempSync(join(tmpdir(), "ts7-eslint-bench-")), "files.txt");
   writeFileSync(listFile, files.join("\n"));
 
   const ts6 = runStack("TS 6", resolve("tools/bench-ts6"), tsconfigPath, rootDir, listFile);

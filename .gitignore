@@ -1,6 +1,8 @@
-docs/
-node_modules/
+CLAUDE.md
 dist/
-*.tsbuildinfo
+docs/
 .eslintcache
+node_modules/
+*.tgz
 .tmp/
+*.tsbuildinfo

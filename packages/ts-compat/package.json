@@ -1,5 +1,5 @@
 {
-  "name": "@tseslint7/ts-compat",
+  "name": "@ts7-eslint/ts-compat",
   "version": "0.0.0",
   "private": true,
   "main": "./index.cjs",

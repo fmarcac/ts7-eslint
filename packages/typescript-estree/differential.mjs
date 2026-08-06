@@ -8,15 +8,15 @@
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { childrenSignature, parseReference, referenceTypeScriptVersion } from "@tseslint7/reference";
+import { childrenSignature, parseReference, referenceTypeScriptVersion } from "@ts7-eslint/reference";
 import { SyntaxKind } from "typescript/unstable/ast";
-import { clearProgramServices, getProgramService } from "@tseslint7/ts-api";
+import { clearProgramServices, getProgramService } from "@ts7-eslint/ts-api";
 import { convertComments } from "./comments.mjs";
 import { convertProgram } from "./convert.mjs";
 import { fixtures } from "./fixtures.mjs";
 import { convertTokens } from "./tokens.mjs";
 
-const dir = mkdtempSync(join(tmpdir(), "tseslint7-estree-"));
+const dir = mkdtempSync(join(tmpdir(), "ts7-eslint-estree-"));
 const files = fixtures.map((f) => {
   const fileName = join(dir, `${f.name}.${f.ext}`);
   writeFileSync(fileName, f.code);

@@ -8,7 +8,7 @@
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { relative } from "node:path";
-import { assertNotAlreadyLoaded, installResolutionHook } from "@tseslint7/resolution-hook";
+import { assertNotAlreadyLoaded, installResolutionHook } from "@ts7-eslint/resolution-hook";
 import { ruleSet } from "./shared.mjs";
 
 assertNotAlreadyLoaded();
@@ -17,7 +17,7 @@ installResolutionHook();
 const require = createRequire(import.meta.url);
 const plugin = require("@typescript-eslint/eslint-plugin");
 const { Linter } = await import("eslint");
-const parser = (await import("@tseslint7/parser")).default;
+const parser = (await import("@ts7-eslint/parser")).default;
 
 const [tsconfigPath, rootDir, file, budget = "20000"] = process.argv.slice(2);
 const code = readFileSync(file, "utf8");

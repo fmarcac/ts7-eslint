@@ -6,12 +6,19 @@
 // large test suite. Anything whose imports do not resolve is a bad corpus: unresolved
 // modules become error types and bury real differences under spurious no-unsafe-*
 // reports on both stacks.
+//
+// The application is a private codebase, so its location comes from the environment and
+// the two corpora that use it are left out when that is not set:
+//
+//   TS7_ESLINT_APP_CORPUS=~/src/some-app node tools/bench/run.mjs
+//
+// It is expected to hold `server/` and `client/` directories, each with a tsconfig.json
+// and a src/.
 
-import { homedir } from "node:os";
 import { join } from "node:path";
 
 const bench = join(process.cwd(), ".tmp", "bench");
-const app = join(homedir(), "git", "app");
+const app = process.env.TS7_ESLINT_APP_CORPUS;
 
 export const corpora = [
   {
@@ -34,16 +41,20 @@ export const corpora = [
     tsconfig: join(bench, "ts-pattern/tsconfig.json"),
     root: join(bench, "ts-pattern/src"),
   },
-  {
-    name: "app-backend",
-    note: "application backend, dependencies installed",
-    tsconfig: join(app, "server/tsconfig.json"),
-    root: join(app, "server/src"),
-  },
-  {
-    name: "app-frontend",
-    note: "application frontend, React and TSX",
-    tsconfig: join(app, "client/tsconfig.json"),
-    root: join(app, "client/src"),
-  },
+  ...(app
+    ? [
+        {
+          name: "app-backend",
+          note: "application backend, dependencies installed",
+          tsconfig: join(app, "server/tsconfig.json"),
+          root: join(app, "server/src"),
+        },
+        {
+          name: "app-frontend",
+          note: "application frontend, React and TSX",
+          tsconfig: join(app, "client/tsconfig.json"),
+          root: join(app, "client/src"),
+        },
+      ]
+    : []),
 ];

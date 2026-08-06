@@ -1,4 +1,4 @@
-// Phase 1 checks for @tseslint7/ts-api.
+// Phase 1 checks for @ts7-eslint/ts-api.
 //
 // The claims worth holding this package to: it boots once, it reads ESLint's in-memory
 // text rather than disk when they differ, and it does not churn the snapshot when they
@@ -9,7 +9,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { capabilities, clearProgramServices, getProgramService } from "./index.mjs";
 
-const dir = mkdtempSync(join(tmpdir(), "tseslint7-tsapi-"));
+const dir = mkdtempSync(join(tmpdir(), "ts7-eslint-tsapi-"));
 const tsconfigPath = join(dir, "tsconfig.json");
 const fileA = join(dir, "a.ts");
 
@@ -131,7 +131,7 @@ console.log(
 
 console.log("\ngetAwaitedType:");
 
-const awaitedDir = mkdtempSync(join(tmpdir(), "tseslint7-awaited-"));
+const awaitedDir = mkdtempSync(join(tmpdir(), "ts7-eslint-awaited-"));
 const awaitedConfig = join(awaitedDir, "tsconfig.json");
 const awaitedFile = join(awaitedDir, "a.ts");
 

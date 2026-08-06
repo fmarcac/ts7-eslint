@@ -1,10 +1,60 @@
 {
-  "name": "typescript-eslint-ts7-workspace",
-  "version": "0.0.0",
-  "private": true,
+  "name": "ts7-eslint",
+  "version": "0.1.0",
+  "description": "Type-aware ESLint for TypeScript 7, the native Go port",
+  "keywords": [
+    "eslint",
+    "eslintplugin",
+    "typescript",
+    "typescript7",
+    "tsgo",
+    "typescript-eslint",
+    "typed-linting"
+  ],
+  "homepage": "https://github.com/fmarcac/ts7-eslint#readme",
+  "bugs": "https://github.com/fmarcac/ts7-eslint/issues",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/fmarcac/ts7-eslint.git"
+  },
+  "license": "MIT",
   "type": "module",
+  "exports": {
+    ".": "./index.mjs",
+    "./parser": "./packages/parser/index.mjs",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "index.mjs",
+    "packages/parser/index.mjs",
+    "packages/resolution-hook/index.mjs",
+    "packages/ts-api/capabilities.mjs",
+    "packages/ts-api/index.mjs",
+    "packages/ts-api/node-compat.mjs",
+    "packages/ts-api/program-service.mjs",
+    "packages/ts-api/token-walk.mjs",
+    "packages/ts-api/type-batch.mjs",
+    "packages/ts-api/type-compat.mjs",
+    "packages/ts-compat/index.cjs",
+    "packages/ts-compat/ts6-enums.cjs",
+    "packages/typescript-estree/comments.mjs",
+    "packages/typescript-estree/convert.mjs",
+    "packages/typescript-estree/index.mjs",
+    "packages/typescript-estree/jsx-entities.mjs",
+    "packages/typescript-estree/node-utils.mjs",
+    "packages/typescript-estree/tokens.mjs"
+  ],
   "engines": {
     "node": ">=22.15"
+  },
+  "dependencies": {
+    "@typescript-eslint/eslint-plugin": "8.66.0",
+    "@typescript-eslint/scope-manager": "8.66.0",
+    "@typescript-eslint/visitor-keys": "8.66.0"
+  },
+  "peerDependencies": {
+    "eslint": "^9.0.0 || ^10.0.0",
+    "typescript": "^7.0.0"
   },
   "scripts": {
     "bench": "node tools/bench/run.mjs",

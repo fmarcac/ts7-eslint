@@ -6,8 +6,8 @@
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { relative } from "node:path";
-import { assertNotAlreadyLoaded, installResolutionHook } from "@tseslint7/resolution-hook";
-import { batchStats, programTiming, shortcutAudit, unansweredQueries } from "@tseslint7/ts-api";
+import { assertNotAlreadyLoaded, installResolutionHook } from "@ts7-eslint/resolution-hook";
+import { batchStats, programTiming, shortcutAudit, unansweredQueries } from "@ts7-eslint/ts-api";
 import { report, ruleSet } from "./shared.mjs";
 
 assertNotAlreadyLoaded();
@@ -16,7 +16,7 @@ installResolutionHook();
 const require = createRequire(import.meta.url);
 const plugin = require("@typescript-eslint/eslint-plugin");
 const { Linter } = await import("eslint");
-const parser = (await import("@tseslint7/parser")).default;
+const parser = (await import("@ts7-eslint/parser")).default;
 const { version } = require("typescript");
 
 const [tsconfigPath, rootDir, listFile] = process.argv.slice(2);
@@ -66,7 +66,7 @@ for (const [index, file] of files.entries()) {
 }
 
 report({
-  stack: `typescript ${version} + @tseslint7 parser`,
+  stack: `typescript ${version} + ts7-eslint parser`,
   files: files.length,
   ruleCount: Object.keys(rules).length,
   firstFileMs,

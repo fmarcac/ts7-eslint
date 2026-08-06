@@ -1,5 +1,5 @@
 {
-  "name": "@tseslint7/parser",
+  "name": "@ts7-eslint/parser",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -10,15 +10,15 @@
     "test": "node test.mjs"
   },
   "dependencies": {
-    "@tseslint7/ts-api": "workspace:*",
-    "@tseslint7/typescript-estree": "workspace:*",
+    "@ts7-eslint/ts-api": "workspace:*",
+    "@ts7-eslint/typescript-estree": "workspace:*",
     "@typescript-eslint/scope-manager": "8.66.0",
     "@typescript-eslint/visitor-keys": "8.66.0"
   },
   "devDependencies": {
     "eslint": "10.8.0",
     "typescript": "7.0.2",
-    "@tseslint7/resolution-hook": "workspace:*",
+    "@ts7-eslint/resolution-hook": "workspace:*",
     "@typescript-eslint/eslint-plugin": "8.66.0"
   }
 }

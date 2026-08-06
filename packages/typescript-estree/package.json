@@ -1,5 +1,5 @@
 {
-  "name": "@tseslint7/typescript-estree",
+  "name": "@ts7-eslint/typescript-estree",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -11,10 +11,10 @@
     "test": "node differential.mjs"
   },
   "dependencies": {
-    "@tseslint7/ts-api": "workspace:*"
+    "@ts7-eslint/ts-api": "workspace:*"
   },
   "devDependencies": {
-    "@tseslint7/reference": "workspace:*",
+    "@ts7-eslint/reference": "workspace:*",
     "typescript": "7.0.2"
   }
 }

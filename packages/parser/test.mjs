@@ -8,8 +8,8 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { join, resolve } from "node:path";
-import { clearProgramServices } from "@tseslint7/ts-api";
-import { assertNotAlreadyLoaded, installResolutionHook } from "@tseslint7/resolution-hook";
+import { clearProgramServices } from "@ts7-eslint/ts-api";
+import { assertNotAlreadyLoaded, installResolutionHook } from "@ts7-eslint/resolution-hook";
 
 assertNotAlreadyLoaded();
 installResolutionHook();
@@ -21,7 +21,7 @@ const { Linter } = await import("eslint");
 const parser = (await import("./index.mjs")).default;
 
 mkdirSync(".tmp", { recursive: true });
-const dir = resolve(mkdtempSync(join(".tmp", "tseslint7-parser-")));
+const dir = resolve(mkdtempSync(join(".tmp", "ts7-eslint-parser-")));
 const tsconfigPath = join(dir, "tsconfig.json");
 const filePath = join(dir, "source.ts");
 

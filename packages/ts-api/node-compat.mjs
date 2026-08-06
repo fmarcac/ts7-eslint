@@ -13,7 +13,7 @@
 //     splicing the modifiers in directly.
 //   - Positions are full positions, including leading trivia, not getStart().
 //
-// The children differential in @tseslint7/typescript-estree compares this against TS
+// The children differential in @ts7-eslint/typescript-estree compares this against TS
 // 6.0.3's real getChildren across the whole fixture corpus, because an implementation
 // that is merely close would misindex silently rather than fail.
 

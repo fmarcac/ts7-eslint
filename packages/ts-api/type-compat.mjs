@@ -27,18 +27,18 @@ import { SyntaxKind } from "typescript/unstable/ast";
 import { ObjectFlags, SignatureKind, SymbolFlags, TypeFlags } from "typescript/unstable/sync";
 import { batchTypesFrom } from "./type-batch.mjs";
 
-/** Batched look-ahead for type queries. Set TSESLINT7_BATCH=0 to ask one node at a time. */
-const batching = process.env.TSESLINT7_BATCH !== "0";
+/** Batched look-ahead for type queries. Set TS7_ESLINT_BATCH=0 to ask one node at a time. */
+const batching = process.env.TS7_ESLINT_BATCH !== "0";
 
 /**
  * Answer the questions this file shortcuts both ways, and compare.
  *
  * A shortcut that avoids a round trip is only worth having if it gives the same answer,
  * and "the compiler's own implementation says so" is an argument, not evidence. Under
- * TSESLINT7_VERIFY=1 the avoided call is made anyway and the two answers compared by
+ * TS7_ESLINT_VERIFY=1 the avoided call is made anyway and the two answers compared by
  * identity, so the benchmark can report whether they ever differ.
  */
-const verifying = process.env.TSESLINT7_VERIFY === "1";
+const verifying = process.env.TS7_ESLINT_VERIFY === "1";
 let shortcutsChecked = 0;
 let shortcutsWrong = 0;
 
@@ -55,7 +55,7 @@ function verifyShortcut(answer, ask) {
   }
 }
 
-/** Undefined unless TSESLINT7_VERIFY=1 was set. */
+/** Undefined unless TS7_ESLINT_VERIFY=1 was set. */
 export function shortcutAudit() {
   return verifying ? { checked: shortcutsChecked, wrong: shortcutsWrong } : undefined;
 }
@@ -972,7 +972,7 @@ export function installTypeCompat(checker) {
   // `T | undefined` from getTypeOfSymbol, so for those two the question is genuinely not
   // the same one.
   //
-  // Checked rather than argued. Under TSESLINT7_VERIFY=1 every shortcut answer is also
+  // Checked rather than argued. Under TS7_ESLINT_VERIFY=1 every shortcut answer is also
   // asked of the compiler and the two compared by identity: 129,362 across the five
   // benchmark corpora, none of them different.
   {

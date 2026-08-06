@@ -11,7 +11,7 @@
 // getTokenType and convertToken are deliberate ports of upstream's versions and must
 // stay behaviourally identical; the differential runner holds them to it.
 
-import { nextTokenAfter } from "@tseslint7/ts-api";
+import { nextTokenAfter } from "../ts-api/index.mjs";
 import { SyntaxKind, getTokenAtPosition, isTokenKind } from "typescript/unstable/ast";
 import { getLocFor } from "./node-utils.mjs";
 

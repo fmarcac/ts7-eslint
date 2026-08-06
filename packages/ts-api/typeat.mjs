@@ -1,6 +1,6 @@
 // The type TypeScript 7 infers at a position, through this project's stack.
 import { resolve } from "node:path";
-import { clearProgramServices, getProgramService } from "@tseslint7/ts-api";
+import { clearProgramServices, getProgramService } from "@ts7-eslint/ts-api";
 import { SyntaxKind } from "typescript/unstable/ast";
 const [tsconfigPath, fileName, line, col] = process.argv.slice(2);
 const service = getProgramService({ cwd: resolve("."), tsconfigPath: resolve(tsconfigPath) });

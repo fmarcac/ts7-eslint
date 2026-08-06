@@ -7,14 +7,14 @@
 
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
-import { assertNotAlreadyLoaded, installResolutionHook } from "@tseslint7/resolution-hook";
+import { assertNotAlreadyLoaded, installResolutionHook } from "@ts7-eslint/resolution-hook";
 
 assertNotAlreadyLoaded();
 installResolutionHook();
 
 const require = createRequire(import.meta.url);
 const { Linter } = await import("eslint");
-const parser = (await import("@tseslint7/parser")).default;
+const parser = (await import("@ts7-eslint/parser")).default;
 const fromPlugin = createRequire(require.resolve("@typescript-eslint/eslint-plugin"));
 const tsutils = fromPlugin("ts-api-utils");
 const ts = fromPlugin("typescript");

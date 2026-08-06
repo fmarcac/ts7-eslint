@@ -23,6 +23,7 @@
 // This is transitional. The 7.1 development builds add most of the Type methods back, so
 // each one is installed only when it is actually missing.
 
+import { SyntaxKind } from "typescript/unstable/ast";
 import { SignatureKind, TypeFlags } from "typescript/unstable/sync";
 
 /** Objects already adapted, so repeat crossings are free. */
@@ -145,7 +146,20 @@ function lazyHandle(object, name, resolve) {
  */
 function lazyHandleArray(object, name, resolve) {
   const raw = object[name];
-  if (!Array.isArray(raw) || raw.length === 0 || typeof raw[0] !== "number") {
+  if (!Array.isArray(raw)) {
+    return;
+  }
+
+  // TypeScript 6 left these undefined when there were none; TypeScript 7 gives an empty
+  // array. That difference is not cosmetic. no-unnecessary-type-assertion does
+  //     type.aliasTypeArguments ?? (isTypeReference(type) ? getTypeArguments(type) : [])
+  // and an empty array satisfies `??`, so the type graph is never walked, containsAny
+  // comes back false, and a necessary assertion gets reported as unnecessary.
+  if (raw.length === 0) {
+    define(object, name, undefined);
+    return;
+  }
+  if (typeof raw[0] !== "number") {
     return;
   }
   let cached;
@@ -413,6 +427,49 @@ function computeAwaitedType(checker, type, depth = 0) {
   return promised ? computeAwaitedType(checker, promised, depth + 1) : type;
 }
 
+/**
+ * Recover the type of an identifier that names a type.
+ *
+ * TypeScript 6 answered getTypeAtLocation on the `Observable` in `Observable<T>` with
+ * the type itself. TypeScript 7 answers `any`, which is a real behavioural difference in
+ * the API rather than anything this project does: raw tsgo says `any` too. Rules map
+ * ESTree type nodes onto these identifiers and ask about them, so the difference shows
+ * up directly in lint output.
+ *
+ * getTypeFromTypeNode on the enclosing type node still gives the TS 6 answer, so the
+ * fallback is applied narrowly: only when the answer was `any`, and only for an
+ * identifier that actually names a type reference.
+ */
+function resolveTypePosition(checker, node, result) {
+  if (!isFlagSet(result, TypeFlags.Any) || !node?.parent) {
+    return result;
+  }
+  const parent = node.parent;
+  const namesTheType =
+    (parent.kind === SyntaxKind.TypeReference && parent.typeName === node) ||
+    (parent.kind === SyntaxKind.ExpressionWithTypeArguments && parent.expression === node) ||
+    (parent.kind === SyntaxKind.TypeQuery && parent.exprName === node);
+  if (!namesTheType) {
+    return result;
+  }
+  // The *declared* type, not the type instantiated at this use site. TypeScript 6
+  // answers `Observable<T>` for the name in `Observable<T>`, keeping the declaration's
+  // own type parameter; resolving the enclosing type node instead substitutes whatever
+  // the surrounding call inferred, which is a different answer.
+  try {
+    const symbol = checker.getSymbolAtLocation(node);
+    if (symbol) {
+      const declared = checker.getDeclaredTypeOfSymbol(symbol);
+      if (declared && !isFlagSet(declared, TypeFlags.Any)) {
+        return declared;
+      }
+    }
+    return checker.getTypeFromTypeNode(parent) ?? result;
+  } catch {
+    return result;
+  }
+}
+
 /** Memoise methods taking one object, keyed by that object's identity. */
 function memoiseByObject(checker, names) {
   for (const name of names) {
@@ -595,7 +652,10 @@ export function installTypeCompat(checker) {
         return adapt(cache.get(nodeOrNodes));
       }
 
-      const result = original.call(checker, nodeOrNodes);
+      let result = original.call(checker, nodeOrNodes);
+      if (name === "getTypeAtLocation") {
+        result = resolveTypePosition(checker, nodeOrNodes, result);
+      }
       cache.set(nodeOrNodes, result);
       return adapt(result);
     });

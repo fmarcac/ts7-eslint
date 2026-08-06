@@ -1,0 +1,13 @@
+{
+  "name": "@tseslint7/reference",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./index.mjs"
+  },
+  "dependencies": {
+    "@typescript-eslint/typescript-estree": "8.66.0",
+    "typescript": "6.0.3"
+  }
+}

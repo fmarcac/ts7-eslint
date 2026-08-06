@@ -1,0 +1,13 @@
+{
+  "name": "typescript-eslint-ts7-workspace",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.15"
+  },
+  "scripts": {
+    "spike:tokens": "node spikes/s1-tokens/run.mjs",
+    "spike:hook": "node spikes/s2-hook/run.mjs"
+  }
+}

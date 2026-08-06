@@ -1,0 +1,10 @@
+{
+  "name": "@tseslint7/spike-s1-tokens",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@tseslint7/reference": "workspace:*",
+    "typescript": "7.0.2"
+  }
+}

@@ -127,6 +127,17 @@ function report(result) {
     ...(ts6.crashes ?? []).map((c) => `TS 6: ${c}`),
     ...(ts7.crashes ?? []).map((c) => `TS 7: ${c}`),
   ];
+  if (ts7.timing) {
+    const { bytesReceived, requestCount, roundTripMs, serverTimeMs } = ts7.timing;
+    console.log(
+      `    ${requestCount} requests, ${(roundTripMs / 1000).toFixed(2)}s round trip, ` +
+        `${(serverTimeMs / 1000).toFixed(2)}s of it server time, ` +
+        `${(bytesReceived / 1e6).toFixed(1)} MB received`,
+    );
+    for (const [method, count] of (ts7.timing.byMethod ?? []).slice(0, 8)) {
+      console.log(`      ${String(count).padStart(8)}  ${method}`);
+    }
+  }
   if (ts7.unanswered > 0) {
     console.log(`    ${String(ts7.unanswered).padStart(4)}x query typescript-go could not answer`);
   }

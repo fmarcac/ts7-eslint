@@ -16,6 +16,26 @@ import { installTypeCompat, resetTypeCompat } from "./type-compat.mjs";
 /** tsconfig path to ProgramService. ESLint calls the parser once per file. */
 const services = new Map();
 
+/** Round trips per protocol method, for working out which ones are worth avoiding. */
+const requestCounts = new Map();
+
+function countRequestsByMethod(client) {
+  for (const name of ["apiRequest", "apiRequestBinary"]) {
+    const original = client[name];
+    if (typeof original !== "function") {
+      continue;
+    }
+    Object.defineProperty(client, name, {
+      configurable: true,
+      writable: true,
+      value(method, params) {
+        requestCounts.set(method, (requestCounts.get(method) ?? 0) + 1);
+        return original.call(client, method, params);
+      },
+    });
+  }
+}
+
 class ProgramService {
   #api;
   #tsconfigPath;
@@ -42,7 +62,16 @@ class ProgramService {
       // Returning undefined falls through to the real filesystem, so an empty overlay
       // costs nothing. Only files ESLint hands us with modified text are intercepted.
       fs: { readFile: (fileName) => this.#overlay.get(fileName) },
+      // Every checker call is a synchronous round trip, so the question that decides
+      // where optimisation is worth spending is how much of that time the server spends
+      // computing and how much is transport. The server splits the two when asked, at
+      // the cost of timing every request, so this is opt-in.
+      collectTiming: process.env.TSESLINT7_TIMING === "1",
     });
+
+    if (process.env.TSESLINT7_TIMING === "1") {
+      countRequestsByMethod(this.#api.client);
+    }
 
     // openProjects is ref-counted and persists across snapshots, so it is passed once
     // here and never again. Repeating it on every update would leak references.
@@ -170,6 +199,11 @@ class ProgramService {
     return this.checker.getSymbolAtLocation(nodes);
   }
 
+  /** Round-trip, server, and transport time. Empty unless TSESLINT7_TIMING=1. */
+  get timing() {
+    return this.#api.getTimingInfo();
+  }
+
   close() {
     this.#api.close();
   }
@@ -183,6 +217,31 @@ export function getProgramService({ cwd = process.cwd(), tsconfigPath }) {
     services.set(tsconfigPath, service);
   }
   return service;
+}
+
+/**
+ * What the run spent talking to typescript-go, summed over every project.
+ *
+ * Returns undefined unless TSESLINT7_TIMING=1 was set before the first parse.
+ */
+export function programTiming() {
+  const totals = { roundTripMs: 0, serverTimeMs: 0, bytesSent: 0, bytesReceived: 0, requestCount: 0 };
+  let enabled = false;
+  for (const service of services.values()) {
+    const info = service.timing;
+    if (!info?.enabled) {
+      continue;
+    }
+    enabled = true;
+    for (const key of Object.keys(totals)) {
+      totals[key] += info.totals[key] ?? 0;
+    }
+  }
+  if (!enabled) {
+    return undefined;
+  }
+  totals.byMethod = [...requestCounts].sort((a, b) => b[1] - a[1]);
+  return totals;
 }
 
 /** Tear down every service. Primarily for tests, which must not leak tsgo processes. */

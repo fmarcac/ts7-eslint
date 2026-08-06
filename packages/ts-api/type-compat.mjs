@@ -30,6 +30,8 @@ import { SignatureKind, TypeFlags } from "typescript/unstable/sync";
 const adapted = new WeakSet();
 /** Prototype methods already wrapped, so reinstalling does not nest wrappers. */
 const wrappedTypeMethods = new WeakSet();
+/** Instance methods already memoised, for the same reason. */
+const memoisedMethods = new WeakSet();
 
 // ---- Type ----------------------------------------------------------------
 
@@ -105,6 +107,37 @@ function installTypeMethods(prototype) {
       return this.getTypes();
     });
   }
+}
+
+// Every one of these is a round trip to resolve a handle the type object is already
+// holding, and every one is pure within a snapshot.
+const TYPE_METHODS_RETURNING_TYPES = [
+  "getAliasTypeArguments",
+  "getBaseType",
+  "getBaseTypes",
+  "getCheckType",
+  "getConstraint",
+  "getExtendsType",
+  "getFalseType",
+  "getFreshType",
+  "getIndexType",
+  "getLocalTypeParameters",
+  "getObjectType",
+  "getOuterTypeParameters",
+  "getRegularType",
+  "getTarget",
+  "getTrueType",
+  "getTypeParameters",
+  "getTypes",
+];
+
+const TYPE_METHODS_RETURNING_SYMBOLS = ["getAliasSymbol", "getSymbol"];
+
+/** Restore the TS 6 surface on a type class, and stop it re-asking the server. */
+function patchTypePrototype(prototype) {
+  installTypeMethods(prototype);
+  memoiseInstanceMethods(prototype, TYPE_METHODS_RETURNING_TYPES, adaptType);
+  memoiseInstanceMethods(prototype, TYPE_METHODS_RETURNING_SYMBOLS, adaptSymbol);
 }
 
 /**
@@ -201,7 +234,7 @@ function adaptType(type) {
   // sample is not enough. Any type that arrives without the restored surface gets its
   // own prototype patched, once.
   if (typeof type.isUnionOrIntersection !== "function") {
-    installTypeMethods(Object.getPrototypeOf(type));
+    patchTypePrototype(Object.getPrototypeOf(type));
   }
   lazyHandle(type, "target", function () {
     return adaptType(this.getTarget());
@@ -321,7 +354,12 @@ function adaptSignature(signature) {
   adapted.add(signature);
 
   if (!signatureMethodsInstalled) {
-    installSignatureMethods(Object.getPrototypeOf(signature));
+    const prototype = Object.getPrototypeOf(signature);
+    installSignatureMethods(prototype);
+    // The signature class is not reachable from the checker, so this is the first
+    // instance we see. getParameters is one round trip and rules ask it per argument.
+    memoiseInstanceMethods(prototype, ["getParameters"], adaptSymbol);
+    memoiseInstanceMethods(prototype, ["getTypeParameters"], adaptType);
     signatureMethodsInstalled = true;
   }
 
@@ -498,9 +536,13 @@ function memoiseByObject(checker, names) {
       continue;
     }
     const cache = new WeakMap();
-    define(checker, name, function (argument) {
-      if (argument === null || typeof argument !== "object") {
-        return original.call(checker, argument);
+    define(checker, name, function (argument, ...rest) {
+      // Several of these take an optional second argument (getResolvedSignature takes a
+      // candidates array, getContextualType takes context flags). Those calls are not
+      // keyed by it, so they go straight through rather than reading a cache entry that
+      // answers a different question.
+      if (argument === null || typeof argument !== "object" || rest.length > 0) {
+        return original.call(checker, argument, ...rest);
       }
       if (cache.has(argument)) {
         return cache.get(argument);
@@ -509,6 +551,79 @@ function memoiseByObject(checker, names) {
       cache.set(argument, result);
       return result;
     });
+  }
+}
+
+/** Memoise methods taking two objects, such as (symbol, node). */
+function memoiseByTwoObjects(checker, names) {
+  for (const name of names) {
+    const original = checker[name];
+    if (typeof original !== "function") {
+      continue;
+    }
+    const cache = new WeakMap();
+    define(checker, name, function (first, second, ...rest) {
+      if (
+        first === null ||
+        typeof first !== "object" ||
+        second === null ||
+        typeof second !== "object" ||
+        rest.length > 0
+      ) {
+        return original.call(checker, first, second, ...rest);
+      }
+      let inner = cache.get(first);
+      if (!inner) {
+        inner = new WeakMap();
+        cache.set(first, inner);
+      }
+      if (inner.has(second)) {
+        return inner.get(second);
+      }
+      const result = original.call(checker, first, second);
+      inner.set(second, result);
+      return result;
+    });
+  }
+}
+
+/**
+ * Memoise no-argument methods on a compiler object's own prototype, keyed by the
+ * instance, and adapt what they return on the way out.
+ *
+ * These are the calls that do not go through the Checker at all: `type.getTypes()`,
+ * `type.getSymbol()`, `signature.getParameters()`. Each is a round trip, each is pure
+ * within a snapshot, and rules ask them constantly: on one 295-file application they were
+ * 200,000 of the 660,000 requests in a run.
+ *
+ * The compiler has its own cache for some of them, keyed by the handle id stored on the
+ * object, but this file replaces those fields with the resolved objects, so that cache
+ * can no longer match. Memoising here restores what it was for.
+ *
+ * Arrays are copied out. Every one of these methods builds a fresh array per call today,
+ * and handing the same instance to every caller would let one of them mutate the answer
+ * for the rest.
+ */
+function memoiseInstanceMethods(prototype, names, adapt) {
+  for (const name of names) {
+    const original = prototype[name];
+    if (typeof original !== "function" || memoisedMethods.has(original)) {
+      continue;
+    }
+    const cache = new WeakMap();
+    const wrapper = function () {
+      let result;
+      if (cache.has(this)) {
+        result = cache.get(this);
+      } else {
+        const raw = original.call(this);
+        result = Array.isArray(raw) ? raw.map(adapt) : adapt(raw);
+        cache.set(this, result);
+      }
+      return Array.isArray(result) ? result.slice() : result;
+    };
+    memoisedMethods.add(wrapper);
+    define(prototype, name, wrapper);
   }
 }
 
@@ -628,7 +743,7 @@ export function installTypeCompat(checker) {
   }
 
   if (!prototypesPatched) {
-    installTypeMethods(Object.getPrototypeOf(sampleType));
+    patchTypePrototype(Object.getPrototypeOf(sampleType));
     const sampleSymbol = checker.getPropertyOfType(checker.getStringType(), "length");
     if (sampleSymbol) {
       installSymbolMethods(Object.getPrototypeOf(sampleSymbol));
@@ -705,34 +820,44 @@ export function installTypeCompat(checker) {
     "getBaseConstraintOfType",
     "getBaseTypeOfLiteralType",
     "getBaseTypes",
+    "getConstantValue",
+    "getConstraintOfTypeParameter",
+    "getContextualType",
+    "getDeclaredTypeOfSymbol",
+    "getExportSpecifierLocalTargetSymbol",
+    "getExportsOfModule",
+    "getImmediateAliasedSymbol",
     "getIndexInfosOfType",
     "getNonNullableType",
     "getPropertiesOfType",
+    "getResolvedSignature",
+    "getResolvedSymbol",
+    "getRestTypeOfSignature",
     "getReturnTypeOfSignature",
+    "getShorthandAssignmentValueSymbol",
+    "getSignatureFromDeclaration",
     "getTypeArguments",
+    "getTypeFromTypeNode",
     "getTypeOfSymbol",
+    "getTypePredicateOfSignature",
     "getWidenedType",
+    "isArrayLikeType",
+    "isArrayType",
+    "isContextSensitive",
+    "isTupleType",
   ]);
-  memoiseByObjectAndKey(checker, ["getPropertyOfType", "getSignaturesOfType", "typeToString"]);
+  memoiseByObjectAndKey(checker, [
+    "getMemberInModuleExports",
+    "getParameterType",
+    "getPropertyOfType",
+    "getSignaturesOfType",
+    "typeToString",
+  ]);
+  memoiseByTwoObjects(checker, ["getTypeOfSymbolAtLocation", "isTypeAssignableTo"]);
 
   wrapReturning(checker, SYMBOL_RETURNING, adaptSymbol);
   wrapReturning(checker, SIGNATURE_RETURNING, adaptSignature);
   wrapReturning(checker, TYPE_RETURNING, adaptType);
-
-  // Types also reach callers from other types, not only from the checker.
-  const typePrototype = Object.getPrototypeOf(sampleType);
-  for (const name of ["getTarget", "getTypes", "getConstraint", "getBaseTypes"]) {
-    const original = typePrototype[name];
-    if (typeof original !== "function" || wrappedTypeMethods.has(original)) {
-      continue;
-    }
-    const wrapper = function (...args) {
-      const result = original.apply(this, args);
-      return Array.isArray(result) ? result.map(adaptType) : adaptType(result);
-    };
-    wrappedTypeMethods.add(wrapper);
-    define(typePrototype, name, wrapper);
-  }
 
   patchedCheckers.add(checker);
 }

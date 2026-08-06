@@ -104,12 +104,24 @@ const types = service.getTypes(identifiers);
 check("batched query returns one type per node", types.length, identifiers.length);
 check("empty batch is a no-op", service.getTypes([]).length, 0);
 
+// Two numbers, because they measure different things and only one of them is a property
+// of TypeScript 7: what a repeated question costs (the memo) and what a fresh one costs
+// (a round trip to the Go process).
 const WARM = 500;
 const t = performance.now();
 for (let i = 0; i < WARM; i++) {
   service.checker.getTypeAtLocation(identifiers[i % identifiers.length]);
 }
-console.log(`\n${WARM} warm type queries: ${((performance.now() - t) / WARM).toFixed(3)} ms each`);
+console.log(`\n${WARM} repeated type queries: ${((performance.now() - t) / WARM).toFixed(3)} ms each`);
+
+const raw = Object.getPrototypeOf(service.checker).getTypeAtLocation;
+const cold = performance.now();
+for (let i = 0; i < WARM; i++) {
+  raw.call(service.checker, identifiers[i % identifiers.length]);
+}
+console.log(
+  `${WARM} round trips to the server: ${((performance.now() - cold) / WARM).toFixed(3)} ms each`,
+);
 
 // ---- getAwaitedType -------------------------------------------------------
 //

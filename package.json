@@ -9,7 +9,7 @@
   "scripts": {
     "smoke:ts-api": "node packages/ts-api/smoke.mjs",
     "spike:hook": "node spikes/s2-hook/run.mjs",
-    "spike:tokens": "node spikes/s1-tokens/run.mjs",
-    "test": "pnpm spike:tokens && pnpm spike:hook && pnpm smoke:ts-api"
+    "test:estree": "node packages/typescript-estree/differential.mjs",
+    "test": "pnpm test:estree && pnpm spike:hook && pnpm smoke:ts-api"
   }
 }

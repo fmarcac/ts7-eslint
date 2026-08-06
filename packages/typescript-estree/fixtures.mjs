@@ -1,5 +1,6 @@
-// Syntax chosen to break a naive token scanner. Every entry here is a case where the
-// correct token split depends on parser context rather than on the characters alone.
+// Syntax chosen to break a naive scanner. Every entry is a case where the correct split,
+// or the correct answer to "is this a comment", depends on parser context rather than on
+// the characters alone.
 
 export const fixtures = [
   {
@@ -105,6 +106,57 @@ type Infer<T> = T extends Array<infer U> ? U : never;
 </div>;
 const empty = <></>;
 const compare = 1 < 2;
+`,
+  },
+
+  // Comment placement. A `//` inside a string, a regex, or JSX text is not a comment,
+  // and a comment's own delimiters are not part of its value.
+  {
+    name: "comments-basic",
+    ext: "ts",
+    code: `// leading line comment
+/* leading block */
+const a = 1; // trailing line
+/**
+ * JSDoc block
+ * @param x nothing
+ */
+function documented(x: number) {
+  /* inner */ return x; // after return
+}
+/* multi
+   line
+   block */
+export { documented };
+`,
+  },
+  {
+    name: "comments-not-comments",
+    ext: "ts",
+    code: `const url = "https://example.com/not-a-comment";
+const re = /\\/\\/ still not a comment/;
+const tpl = \`// inside a template \${1 /* but this is */}\`;
+const div = 10 / 2; // real comment
+`,
+  },
+  {
+    name: "comments-in-jsx",
+    ext: "tsx",
+    jsx: true,
+    code: `const node = <div>
+  // this is JSX text, not a comment
+  {/* this IS a comment */}
+  <span attr="// also text" />
+</div>;
+`,
+  },
+  {
+    name: "shebang",
+    ext: "ts",
+    code: `#!/usr/bin/env node
+// a real comment after the shebang
+const started = true;
+export { started };
 `,
   },
 ];

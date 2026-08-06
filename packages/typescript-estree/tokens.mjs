@@ -1,21 +1,22 @@
-// S1: rebuild ESLint's token list on TypeScript 7, which has no Node.getChildren().
+// ESLint's token list, rebuilt on TypeScript 7.
 //
-// Upstream typescript-estree walks the tree with getChildren() and emits every leaf
-// token. TS 7 dropped getChildren(), but its own astnav module solves the same problem
-// by pairing forEachChild with a scanner that recovers the punctuation and keyword
-// tokens sitting in the gaps between child nodes. getTokenAtPosition and findNextToken
-// are the public surface of that machinery, so we walk the token stream through them
-// and keep the parser's own context decisions (JSX vs comparison, regex vs division,
-// >> vs two closing generics) instead of trying to re-derive them.
+// TS 7 has no Node.getChildren(), which is how upstream typescript-estree walks leaf
+// tokens. TS 7's own astnav module solves the same problem by pairing forEachChild with
+// a scanner that recovers the punctuation and keyword tokens in the gaps between child
+// nodes. getTokenAtPosition and findNextToken are the public surface of that machinery,
+// so walking the stream through them keeps the parser's context decisions (JSX versus
+// comparison, regex versus division, `>>` versus two closing generics) rather than
+// re-deriving them.
 //
-// getTokenType and convertToken below are deliberate ports of upstream's versions.
-// They must stay behaviourally identical, so the differential runner can hold us to it.
+// getTokenType and convertToken are deliberate ports of upstream's versions and must
+// stay behaviourally identical; the differential runner holds them to it.
 
 import {
   SyntaxKind,
   findNextToken,
   getTokenAtPosition,
 } from "typescript/unstable/ast";
+import { getLocFor } from "./node-utils.mjs";
 
 // TS 7 renamed EndOfFileToken to EndOfFile. Tolerate either.
 const END_OF_FILE = SyntaxKind.EndOfFile ?? SyntaxKind.EndOfFileToken;
@@ -92,15 +93,6 @@ export function getTokenType(token) {
   return "Identifier";
 }
 
-function getLocFor(start, end, sourceFile) {
-  const startLoc = sourceFile.getLineAndCharacterOfPosition(start);
-  const endLoc = sourceFile.getLineAndCharacterOfPosition(end);
-  return {
-    start: { column: startLoc.character, line: startLoc.line + 1 },
-    end: { column: endLoc.character, line: endLoc.line + 1 },
-  };
-}
-
 /** Port of upstream convertToken. */
 export function convertToken(token, sourceFile) {
   const start =
@@ -141,35 +133,16 @@ function makePunctuator(value, start, end, sourceFile) {
 }
 
 /**
- * Emit one source token as the one or more ESTree tokens upstream produces for it.
+ * Every source token in order, as raw TypeScript nodes.
  *
- * TS scans `</` as a single LessThanSlashToken in JSX context. Upstream never sees that:
- * its getChildren() walk re-scans with the non-JSX scanner, which splits the same two
- * characters into `<` and `/`. Rules are written against that two-token view, so match it.
+ * Comment collection needs the token nodes themselves (for `pos`, `end`, and `parent`),
+ * not their ESTree projections, so the walk is exposed separately from the conversion.
  */
-function pushToken(tokens, token, sourceFile) {
-  if (token.kind === SyntaxKind.LessThanSlashToken) {
-    const start = token.getStart(sourceFile);
-    tokens.push(makePunctuator("<", start, start + 1, sourceFile));
-    tokens.push(makePunctuator("/", start + 1, start + 2, sourceFile));
-    return;
-  }
-  tokens.push(convertToken(token, sourceFile));
-}
-
-/**
- * Walk the whole token stream in source order.
- *
- * findNextToken recurses from the root on every step, so this is not linear. Correctness
- * first: if the differential passes, a single-pass forEachChild plus scanner walker is a
- * drop-in replacement for this function and nothing else has to change.
- */
-export function collectTokens(sourceFile) {
-  const tokens = [];
+export function* walkTokenNodes(sourceFile) {
   let token = getTokenAtPosition(sourceFile, 0);
 
   while (token && token.kind !== END_OF_FILE) {
-    pushToken(tokens, token, sourceFile);
+    yield token;
     const next = findNextToken(token, sourceFile, sourceFile);
     if (!next || next.end <= token.end) {
       // No forward progress means the walk is stuck; stop rather than spin.
@@ -177,6 +150,25 @@ export function collectTokens(sourceFile) {
     }
     token = next;
   }
+}
 
+/**
+ * ESLint's `ast.tokens`.
+ *
+ * TS scans `</` as a single LessThanSlashToken in JSX. Upstream never sees that: its
+ * getChildren() walk re-scans with the non-JSX scanner, which splits the same two
+ * characters into `<` and `/`. Rules are written against the two-token view, so match it.
+ */
+export function convertTokens(sourceFile) {
+  const tokens = [];
+  for (const token of walkTokenNodes(sourceFile)) {
+    if (token.kind === SyntaxKind.LessThanSlashToken) {
+      const start = token.getStart(sourceFile);
+      tokens.push(makePunctuator("<", start, start + 1, sourceFile));
+      tokens.push(makePunctuator("/", start + 1, start + 2, sourceFile));
+      continue;
+    }
+    tokens.push(convertToken(token, sourceFile));
+  }
   return tokens;
 }

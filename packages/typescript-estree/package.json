@@ -1,0 +1,20 @@
+{
+  "name": "@tseslint7/typescript-estree",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./index.mjs",
+    "./tokens": "./tokens.mjs"
+  },
+  "scripts": {
+    "test": "node differential.mjs"
+  },
+  "dependencies": {
+    "@tseslint7/ts-api": "workspace:*"
+  },
+  "devDependencies": {
+    "@tseslint7/reference": "workspace:*",
+    "typescript": "7.0.2"
+  }
+}

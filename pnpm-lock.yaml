@@ -20,8 +20,12 @@ importers:
         specifier: 7.0.2
         version: 7.0.2
 
-  spikes/s1-tokens:
+  packages/typescript-estree:
     dependencies:
+      '@tseslint7/ts-api':
+        specifier: workspace:*
+        version: link:../ts-api
+    devDependencies:
       '@tseslint7/reference':
         specifier: workspace:*
         version: link:../../tools/reference

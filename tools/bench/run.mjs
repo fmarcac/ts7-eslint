@@ -68,7 +68,7 @@ function runStack(label, directory) {
   for (let attempt = 0; attempt < repeat; attempt++) {
     const stdout = execFileSync(
       process.execPath,
-      [join(directory, "run.mjs"), tsconfigPath, rootDir, listFile],
+      [join(directory, "run.mjs"), tsconfigPath, rootDir, listFile, ...(flags.includes("--parse-only") ? ["--parse-only"] : [])],
       { cwd: rootDir, encoding: "utf8", maxBuffer: 256 * 1024 * 1024 },
     );
     const line = stdout.split("\n").find((l) => l.startsWith("__BENCH__"));

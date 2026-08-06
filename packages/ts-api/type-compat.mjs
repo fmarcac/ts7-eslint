@@ -16,6 +16,7 @@
 // This is transitional. The 7.1 development builds add most of the Type methods back, so
 // each one is installed only when it is actually missing.
 
+import { SyntaxKind } from "typescript/unstable/ast";
 import { SignatureKind, TypeFlags } from "typescript/unstable/sync";
 
 /** Objects already adapted, so repeat crossings are free. */
@@ -406,6 +407,79 @@ function computeAwaitedType(checker, type, depth = 0) {
   return promised ? computeAwaitedType(checker, promised, depth + 1) : type;
 }
 
+/**
+ * Node kinds that must not be handed to getTypeAtLocation.
+ *
+ * `checker.getTypeAtLocation(importClause)` crashes the Go server outright with
+ * "panic: runtime error: invalid memory address or nil pointer dereference". Rules never
+ * ask about an import clause, so nothing is lost by skipping it, but a speculative
+ * prefetch would walk straight into it. Established by sweeping every node kind in a
+ * real codebase, where this is the only one that panics.
+ */
+const UNSAFE_FOR_TYPE_QUERY = new Set([SyntaxKind.ImportClause]);
+
+/** Memoise methods taking one object, keyed by that object's identity. */
+function memoiseByObject(checker, names) {
+  for (const name of names) {
+    const original = checker[name];
+    if (typeof original !== "function") {
+      continue;
+    }
+    const cache = new WeakMap();
+    define(checker, name, function (argument) {
+      if (argument === null || typeof argument !== "object") {
+        return original.call(checker, argument);
+      }
+      if (cache.has(argument)) {
+        return cache.get(argument);
+      }
+      const result = original.call(checker, argument);
+      cache.set(argument, result);
+      return result;
+    });
+  }
+}
+
+/** Memoise methods taking an object plus a primitive, such as (type, name). */
+function memoiseByObjectAndKey(checker, names) {
+  for (const name of names) {
+    const original = checker[name];
+    if (typeof original !== "function") {
+      continue;
+    }
+    const cache = new WeakMap();
+    define(checker, name, function (argument, key, ...rest) {
+      // Only the two-argument form is memoised; anything richer goes straight through.
+      if (argument === null || typeof argument !== "object" || rest.length > 0) {
+        return original.call(checker, argument, key, ...rest);
+      }
+      let byKey = cache.get(argument);
+      if (!byKey) {
+        byKey = new Map();
+        cache.set(argument, byKey);
+      }
+      if (byKey.has(key)) {
+        return byKey.get(key);
+      }
+      const result = original.call(checker, argument, key);
+      byKey.set(key, result);
+      return result;
+    });
+  }
+}
+
+/** Every node in a file that is safe to ask about, the unit the prefetch works in. */
+function collectNodes(sourceFile) {
+  const nodes = [];
+  (function walk(node) {
+    if (!UNSAFE_FOR_TYPE_QUERY.has(node.kind)) {
+      nodes.push(node);
+    }
+    node.forEachChild(walk);
+  })(sourceFile);
+  return nodes;
+}
+
 // ---- checker boundary ----------------------------------------------------
 
 /** Checker methods whose results need per-instance adaptation. */
@@ -527,20 +601,67 @@ export function installTypeCompat(checker) {
       continue;
     }
     const cache = new WeakMap();
+    const prefetched = new WeakSet();
     const adapt = name === "getTypeAtLocation" ? adaptType : adaptSymbol;
+
     define(checker, name, function (nodeOrNodes) {
-      // The array overload batches on the server already; leave it alone.
+      // The array overload already batches on the server; pass it straight through.
       if (Array.isArray(nodeOrNodes)) {
         return original.call(checker, nodeOrNodes).map(adapt);
       }
       if (cache.has(nodeOrNodes)) {
-        return cache.get(nodeOrNodes);
+        return adapt(cache.get(nodeOrNodes));
       }
-      const result = adapt(original.call(checker, nodeOrNodes));
+
+      // First question about this file: answer it for every node at once. One round
+      // trip costs about what eight individual ones do, and a type-aware rule pass asks
+      // about most of the file anyway. Files that no type-aware rule touches never get
+      // here, so a purely syntactic run pays nothing.
+      const sourceFile = nodeOrNodes.getSourceFile?.();
+      if (sourceFile && !prefetched.has(sourceFile)) {
+        prefetched.add(sourceFile);
+        const nodes = collectNodes(sourceFile);
+        if (nodes.length > 0) {
+          // The prefetch is an optimisation and must never change an answer. If the
+          // batch fails for any reason, fall back to asking one node at a time.
+          try {
+            const answers = original.call(checker, nodes);
+            for (const [index, node] of nodes.entries()) {
+              cache.set(node, answers[index]);
+            }
+          } catch {
+            // Leave the cache alone; the per-node path below still works.
+          }
+        }
+        if (cache.has(nodeOrNodes)) {
+          return adapt(cache.get(nodeOrNodes));
+        }
+      }
+
+      const result = original.call(checker, nodeOrNodes);
       cache.set(nodeOrNodes, result);
-      return result;
+      return adapt(result);
     });
   }
+
+  // Every remaining checker call is also a round trip, and rules ask the same questions
+  // over and over: the type of a symbol, the signatures of a type, the apparent type of
+  // a receiver. All are pure within a snapshot, so memoise them by argument identity.
+  memoiseByObject(checker, [
+    "getAliasedSymbol",
+    "getApparentType",
+    "getBaseConstraintOfType",
+    "getBaseTypeOfLiteralType",
+    "getBaseTypes",
+    "getIndexInfosOfType",
+    "getNonNullableType",
+    "getPropertiesOfType",
+    "getReturnTypeOfSignature",
+    "getTypeArguments",
+    "getTypeOfSymbol",
+    "getWidenedType",
+  ]);
+  memoiseByObjectAndKey(checker, ["getPropertyOfType", "getSignaturesOfType", "typeToString"]);
 
   wrapReturning(checker, SYMBOL_RETURNING, adaptSymbol);
   wrapReturning(checker, SIGNATURE_RETURNING, adaptSignature);

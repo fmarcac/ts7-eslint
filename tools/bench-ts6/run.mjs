@@ -18,7 +18,9 @@ const plugin = require("@typescript-eslint/eslint-plugin");
 const [tsconfigPath, rootDir, listFile] = process.argv.slice(2);
 const files = readFileSync(listFile, "utf8").split("\n").filter(Boolean);
 
-const rules = ruleSet(plugin);
+// With --parse-only the rule set is empty, which isolates parse, convert and scope
+// analysis from rule execution.
+const rules = process.argv.includes("--parse-only") ? {} : ruleSet(plugin);
 const linter = new Linter();
 const config = [
   {

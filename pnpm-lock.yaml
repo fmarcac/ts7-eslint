@@ -108,6 +108,9 @@ importers:
       '@tseslint7/resolution-hook':
         specifier: workspace:*
         version: link:../../packages/resolution-hook
+      '@tseslint7/ts-api':
+        specifier: workspace:*
+        version: link:../../packages/ts-api
       '@typescript-eslint/eslint-plugin':
         specifier: 8.66.0
         version: 8.66.0(@typescript-eslint/parser@8.66.0(eslint@10.8.0)(typescript@7.0.2))(eslint@10.8.0)(typescript@7.0.2)

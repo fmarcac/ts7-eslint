@@ -1,0 +1,12 @@
+{
+  "name": "@tseslint7/spike-s2-hook",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@tseslint7/ts-compat": "workspace:*",
+    "@typescript-eslint/eslint-plugin": "8.66.0",
+    "eslint": "10.8.0",
+    "typescript": "7.0.2"
+  }
+}

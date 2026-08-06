@@ -1,0 +1,12 @@
+{
+  "name": "@tseslint7/ts-compat",
+  "version": "0.0.0",
+  "private": true,
+  "main": "./index.cjs",
+  "exports": {
+    ".": "./index.cjs"
+  },
+  "dependencies": {
+    "typescript": "7.0.2"
+  }
+}

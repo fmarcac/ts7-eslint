@@ -1,0 +1,116 @@
+// The `ts` namespace as TypeScript 7 can still provide it.
+//
+// Upstream rules and ts-api-utils do `import ts from "typescript"` and reach for enums,
+// type guards, and a handful of host functions. On TS 7 the root export is a version
+// stub, so this module stands in for it. It is CommonJS on purpose: upstream is
+// CommonJS and does `require("typescript")`, so matching the module format keeps the
+// interop identical to the real package.
+//
+// Measured surface: 69 distinct `ts.*` members across all 135 rules plus type-utils.
+// Most are enums TS 7 still exports, and 23 of the 26 type guards come straight from
+// unstable/ast/is.
+
+const ast = require("typescript/unstable/ast");
+const is = require("typescript/unstable/ast/is");
+const sync = require("typescript/unstable/sync");
+const real = require("typescript");
+const ts6Enums = require("./ts6-enums.cjs");
+
+const { SyntaxKind } = ast;
+
+// What this module reports as its version is the *API contract* it implements, which is
+// the TypeScript 6 compiler API, not the TypeScript 7 package it is built on.
+//
+// This is load-bearing rather than cosmetic. @typescript-eslint/eslint-plugin@8.66.0
+// reads ts.versionMajorMinor at import time and throws outright when the major is >= 7,
+// directing users to keep TypeScript 6 installed alongside 7 and point the linter at it.
+// Reporting "7.0" here would claim to be the TS 7 API, which this module is precisely
+// not. The real underlying version stays available as tsVersion.
+const API_VERSION = "6.0.3";
+const API_VERSION_MAJOR_MINOR = "6.0";
+
+// Absent from unstable/ast/is. These are union predicates, not single-kind checks.
+function isParameter(node) {
+  return node?.kind === SyntaxKind.Parameter;
+}
+
+function isFunctionLike(node) {
+  switch (node?.kind) {
+    case SyntaxKind.ArrowFunction:
+    case SyntaxKind.ClassStaticBlockDeclaration:
+    case SyntaxKind.Constructor:
+    case SyntaxKind.FunctionDeclaration:
+    case SyntaxKind.FunctionExpression:
+    case SyntaxKind.GetAccessor:
+    case SyntaxKind.MethodDeclaration:
+    case SyntaxKind.MethodSignature:
+    case SyntaxKind.SetAccessor:
+      return true;
+    default:
+      return false;
+  }
+}
+
+function isClassLike(node) {
+  return (
+    node?.kind === SyntaxKind.ClassDeclaration || node?.kind === SyntaxKind.ClassExpression
+  );
+}
+
+function isMethodSignature(node) {
+  return node?.kind === SyntaxKind.MethodSignature;
+}
+
+/** Mirrors TS 6's isTypeOnlyImportOrExportDeclaration. */
+function isTypeOnlyImportOrExportDeclaration(node) {
+  switch (node?.kind) {
+    case SyntaxKind.ExportSpecifier:
+    case SyntaxKind.ImportSpecifier:
+      return node.isTypeOnly || node.parent.parent.isTypeOnly;
+    case SyntaxKind.NamespaceImport:
+      return node.parent.isTypeOnly;
+    case SyntaxKind.ImportClause:
+    case SyntaxKind.NamespaceExport:
+      return node.isTypeOnly;
+    default:
+      return false;
+  }
+}
+
+// TS 7 makes forEachChild a method on Node rather than a free function.
+function forEachChild(node, cbNode, cbNodes) {
+  return node.forEachChild(cbNode, cbNodes);
+}
+
+function displayPartsToString(parts) {
+  return parts ? parts.map((part) => part.text).join("") : "";
+}
+
+module.exports = {
+  ...is,
+  ...ast,
+  ...ts6Enums,
+
+  displayPartsToString,
+  forEachChild,
+  isClassLike,
+  isFunctionLike,
+  isMethodSignature,
+  isParameter,
+  isTypeOnlyImportOrExportDeclaration,
+
+  // Enums live on both entry points; sync carries the checker-side ones.
+  ElementFlags: sync.ElementFlags,
+  ModifierFlags: sync.ModifierFlags,
+  ObjectFlags: sync.ObjectFlags,
+  SignatureKind: sync.SignatureKind,
+  SymbolFlags: sync.SymbolFlags,
+  TypeFlags: sync.TypeFlags,
+  TypePredicateKind: sync.TypePredicateKind,
+
+  version: API_VERSION,
+  versionMajorMinor: API_VERSION_MAJOR_MINOR,
+
+  /** The real TypeScript package version backing this shim. */
+  tsVersion: real.version,
+};

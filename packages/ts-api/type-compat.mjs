@@ -6,6 +6,13 @@
 //
 // Two different mechanisms are needed, because the two kinds of difference are not alike:
 //
+// Checker answers are also memoised by argument identity. Every call is a synchronous
+// IPC round trip to the Go process and rules ask the same questions repeatedly, so that
+// is where nearly all of the speed comes from. Speculatively prefetching a whole file's
+// types was tried and removed: a 4% gain on ordinary code, and a catastrophe on
+// type-heavy code, because it resolves expensive types no rule would ever have asked
+// for. Memoising can only avoid work; prefetching can invent it.
+//
 //   - Missing *methods* (Type.getProperty, Signature.getReturnType) go on the prototype.
 //     Cheap, and shared by every instance.
 //   - Changed *properties* (Signature.parameters became handle ids, Symbol.declarations
@@ -16,7 +23,6 @@
 // This is transitional. The 7.1 development builds add most of the Type methods back, so
 // each one is installed only when it is actually missing.
 
-import { SyntaxKind } from "typescript/unstable/ast";
 import { SignatureKind, TypeFlags } from "typescript/unstable/sync";
 
 /** Objects already adapted, so repeat crossings are free. */
@@ -407,17 +413,6 @@ function computeAwaitedType(checker, type, depth = 0) {
   return promised ? computeAwaitedType(checker, promised, depth + 1) : type;
 }
 
-/**
- * Node kinds that must not be handed to getTypeAtLocation.
- *
- * `checker.getTypeAtLocation(importClause)` crashes the Go server outright with
- * "panic: runtime error: invalid memory address or nil pointer dereference". Rules never
- * ask about an import clause, so nothing is lost by skipping it, but a speculative
- * prefetch would walk straight into it. Established by sweeping every node kind in a
- * real codebase, where this is the only one that panics.
- */
-const UNSAFE_FOR_TYPE_QUERY = new Set([SyntaxKind.ImportClause]);
-
 /** Memoise methods taking one object, keyed by that object's identity. */
 function memoiseByObject(checker, names) {
   for (const name of names) {
@@ -466,18 +461,6 @@ function memoiseByObjectAndKey(checker, names) {
       return result;
     });
   }
-}
-
-/** Every node in a file that is safe to ask about, the unit the prefetch works in. */
-function collectNodes(sourceFile) {
-  const nodes = [];
-  (function walk(node) {
-    if (!UNSAFE_FOR_TYPE_QUERY.has(node.kind)) {
-      nodes.push(node);
-    }
-    node.forEachChild(walk);
-  })(sourceFile);
-  return nodes;
 }
 
 // ---- checker boundary ----------------------------------------------------
@@ -601,7 +584,6 @@ export function installTypeCompat(checker) {
       continue;
     }
     const cache = new WeakMap();
-    const prefetched = new WeakSet();
     const adapt = name === "getTypeAtLocation" ? adaptType : adaptSymbol;
 
     define(checker, name, function (nodeOrNodes) {
@@ -611,31 +593,6 @@ export function installTypeCompat(checker) {
       }
       if (cache.has(nodeOrNodes)) {
         return adapt(cache.get(nodeOrNodes));
-      }
-
-      // First question about this file: answer it for every node at once. One round
-      // trip costs about what eight individual ones do, and a type-aware rule pass asks
-      // about most of the file anyway. Files that no type-aware rule touches never get
-      // here, so a purely syntactic run pays nothing.
-      const sourceFile = nodeOrNodes.getSourceFile?.();
-      if (sourceFile && !prefetched.has(sourceFile)) {
-        prefetched.add(sourceFile);
-        const nodes = collectNodes(sourceFile);
-        if (nodes.length > 0) {
-          // The prefetch is an optimisation and must never change an answer. If the
-          // batch fails for any reason, fall back to asking one node at a time.
-          try {
-            const answers = original.call(checker, nodes);
-            for (const [index, node] of nodes.entries()) {
-              cache.set(node, answers[index]);
-            }
-          } catch {
-            // Leave the cache alone; the per-node path below still works.
-          }
-        }
-        if (cache.has(nodeOrNodes)) {
-          return adapt(cache.get(nodeOrNodes));
-        }
       }
 
       const result = original.call(checker, nodeOrNodes);

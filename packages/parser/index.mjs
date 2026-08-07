@@ -9,6 +9,7 @@
 // to port.
 
 import { existsSync } from "node:fs";
+import { createRequire } from "node:module";
 import { dirname, isAbsolute, join, parse as parsePath, resolve } from "node:path";
 import { getProgramService } from "../ts-api/index.mjs";
 import { convertSourceFile } from "../typescript-estree/index.mjs";
@@ -155,6 +156,20 @@ export function parse(code, options) {
   return parseForESLint(code, options).ast;
 }
 
+/**
+ * What ESLint prints where a parser is named, and how it serialises one.
+ *
+ * Without it, `eslint --print-config` and the config inspector walk the object, reach a
+ * function, and refuse to serialise the configuration at all. The version comes from the
+ * package rather than a literal so the two cannot drift apart.
+ */
+export const meta = {
+  name: "ts7-eslint/parser",
+  version: createRequire(import.meta.url)("../../package.json").version,
+};
+
 export { visitorKeys };
 
-export default { parse, parseForESLint, visitorKeys };
+// `parse` stays a named export for anything that wants the older entry point, and stays
+// off the parser object, which is the shape upstream hands ESLint.
+export default { meta, parseForESLint, visitorKeys };

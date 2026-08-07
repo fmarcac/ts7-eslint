@@ -30,6 +30,15 @@ Node 22.15 or newer, for `module.registerHooks`. `@typescript-eslint/eslint-plug
 with it, and should not be installed separately: it has to be loaded after the resolution
 hook, which is what the entry point does.
 
+npm prints peer warnings on install, because `@typescript-eslint/eslint-plugin@8.66.0`
+declares `typescript: ">=4.8.4 <6.1.0"` and this installs TypeScript 7. The resolution is
+correct, a single TypeScript on disk with no nested copy, but it fails under
+`--strict-peer-deps`. Silence it with:
+
+```json
+{ "overrides": { "@typescript-eslint/parser": { "typescript": "$typescript" } } }
+```
+
 ## Usage
 
 ```js
@@ -121,9 +130,16 @@ The rest is the pipe, and it is why two of the five corpora are still slower.
 - `getAwaitedType` is reimplemented, because neither TypeScript 7.0 nor the 7.1
   development builds have it. A union mixing promises and non-promises comes back
   unchanged, as the API offers no way to construct a union type.
-- `getChildren` is reconstructed from the scanner. ESLint does not read it; 18 of 23
+- `getChildren` is reconstructed from the scanner. ESLint does not read it; 21 of 26
   fixtures reproduce TypeScript 6.0.3 exactly and the rest differ only where the two
   parsers themselves do.
+- Message text can order union members differently, since TypeScript 7 prints types in its
+  own order. Same rule, same location, same finding: `string | (string | Query)[] | Query`
+  where TypeScript 6 wrote `string | Query | (string | Query)[]`. Anything snapshotting
+  lint output will see that churn.
+- A type query the compiler cannot answer is reported as unknown rather than ending the
+  run, and the first one prints a warning. typescript-go panics on a few type shapes, and
+  losing every other file's findings to one of them is the worse failure.
 - `typescript/unstable/*` will change. Every import of it lives in one layer.
 
 ## License

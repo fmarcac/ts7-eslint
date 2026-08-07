@@ -43,8 +43,33 @@ function rulesOf(name) {
   );
 }
 
+/**
+ * The layer between the parser and the plugin's own rules.
+ *
+ * It turns off the core rules TypeScript makes redundant and turns on four it makes
+ * checkable: no-var, prefer-const, prefer-rest-params and prefer-spread. Those four are
+ * core rules with no plugin prefix, so they are exactly what a plugin-only filter drops,
+ * and leaving the layer out means they never run at all.
+ *
+ * The flat variant, not `eslint-recommended`: that one is the legacy `overrides` shape
+ * and carries no rules of its own.
+ */
+function eslintRecommended() {
+  const config = plugin.configs["flat/eslint-recommended"];
+  const layer = Array.isArray(config) ? config.at(-1) : config;
+  if (!layer?.rules) {
+    throw new Error('@typescript-eslint has no config named "flat/eslint-recommended"');
+  }
+  return layer.rules;
+}
+
+/** Upstream composes the same three layers into every named config except `base`. */
 function configFor(name) {
-  return [base, { files: FILES, rules: rulesOf(name) }];
+  return [
+    base,
+    { files: FILES, rules: eslintRecommended() },
+    { files: FILES, rules: rulesOf(name) },
+  ];
 }
 
 // Getters, so a config nobody asks for cannot fail the import.

@@ -1137,12 +1137,40 @@ export class Converter {
       case SyntaxKind.ExportDeclaration:
         return this.#exportDeclaration(node);
 
-      case SyntaxKind.ExportAssignment:
+      case SyntaxKind.ImportEqualsDeclaration:
         return this.#node(node, {
-          type: node.isExportEquals ? "TSExportAssignment" : "ExportDefaultDeclaration",
-          declaration: this.convert(node.expression),
-          exportKind: "value",
+          type: "TSImportEqualsDeclaration",
+          id: this.convert(node.name),
+          importKind: node.isTypeOnly ? "type" : "value",
+          moduleReference: this.convert(node.moduleReference),
         });
+
+      case SyntaxKind.ExternalModuleReference:
+        return this.#node(node, {
+          type: "TSExternalModuleReference",
+          expression: this.convert(node.expression),
+        });
+
+      case SyntaxKind.NamespaceExportDeclaration:
+        return this.#node(node, {
+          type: "TSNamespaceExportDeclaration",
+          id: this.convert(node.name),
+        });
+
+      // The two forms do not share a property name: TSExportAssignment holds its operand
+      // in `expression` and nothing else, ExportDefaultDeclaration in `declaration`.
+      // Naming it once for both leaves `export =` with a node whose visitor key points at
+      // a property that is not there, and the traversal dereferences undefined.
+      case SyntaxKind.ExportAssignment: {
+        const exported = this.convert(node.expression);
+        return node.isExportEquals
+          ? this.#node(node, { type: "TSExportAssignment", expression: exported })
+          : this.#node(node, {
+              type: "ExportDefaultDeclaration",
+              declaration: exported,
+              exportKind: "value",
+            });
+      }
 
       // ---- binding patterns ----
       case SyntaxKind.ObjectBindingPattern:

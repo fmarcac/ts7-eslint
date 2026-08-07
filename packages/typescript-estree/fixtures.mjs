@@ -306,4 +306,37 @@ declare global {
 abstract class Shape { abstract area(): number; }
 `,
   },
+  {
+    name: "export-assignment",
+    ext: "ts",
+    code: `declare function f(): void;
+declare namespace f { const version: string }
+export = f;
+`,
+  },
+  {
+    name: "export-assignment-in-module",
+    ext: "ts",
+    code: `declare module "pkg/a.js" {
+  import { Duplex } from "stream";
+  function open(stream: Duplex): void;
+  export = open;
+}
+declare module "pkg/b.js" {
+  export function named(): void;
+  export as namespace PkgB;
+}
+`,
+  },
+  {
+    name: "import-equals-and-default-export",
+    ext: "ts",
+    code: `import fs = require("node:fs");
+import Alias = fs.promises;
+export default class {
+  method(): void {}
+}
+export const used = Alias;
+`,
+  },
 ];

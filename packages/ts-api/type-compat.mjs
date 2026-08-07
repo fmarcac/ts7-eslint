@@ -136,9 +136,13 @@ function installTypeMethods(prototype) {
   // getTypes(). There is no own `types` field on the type object, so a prototype getter
   // is enough here. ts-api-utils iterates this, so without it unionConstituents yields
   // undefined and every consumer fails with "not iterable".
+  //
+  // Always a list, even when the compiler could not produce one: a consumer that reaches
+  // this is about to iterate it, and every one of them treats an empty constituent list
+  // as "nothing matched", which keeps a rule quiet rather than inventing a report.
   if (!("types" in prototype)) {
     defineGetter(prototype, "types", function () {
-      return this.getTypes();
+      return this.getTypes() ?? [];
     });
   }
 }
@@ -602,9 +606,43 @@ function isServerPanic(error) {
 
 /** Queries typescript-go could not answer. Reported by the benchmark, asserted by tests. */
 let unanswered = 0;
+let panicReported = false;
 
 export function unansweredQueries() {
   return unanswered;
+}
+
+/**
+ * Ask, and survive an answer the compiler cannot produce.
+ *
+ * typescript-go recovers from its own panics and keeps serving, so a query it cannot
+ * answer should cost that one answer. Letting it through instead ends the process, and one
+ * line in one file discards every finding in every other file of the run, which is by far
+ * the worse failure. The count is reported at the end of a run and the first one is
+ * printed, so a degraded answer is never silent.
+ *
+ * Seen on typescript@7.0.2: `s.match(/x/g) ?? []` builds a union whose second member is a
+ * fresh empty-array literal, and api/proto.go newTypeResponse does an unchecked
+ * AsTupleType on it.
+ */
+function surviving(compute, fallback) {
+  try {
+    return compute();
+  } catch (error) {
+    if (!isServerPanic(error)) {
+      throw error;
+    }
+    unanswered++;
+    if (!panicReported) {
+      panicReported = true;
+      const summary = String(error.message).split("\n")[0];
+      console.warn(
+        `ts7-eslint: the TypeScript 7 compiler could not answer a type query (${summary}). ` +
+          "That type is reported as unknown; the run continues.",
+      );
+    }
+    return fallback;
+  }
 }
 
 /** Memoise methods taking one object, keyed by that object's identity. */
@@ -695,7 +733,10 @@ function memoiseInstanceMethods(prototype, names, adapt) {
       if (cache.has(this)) {
         result = cache.get(this);
       } else {
-        const raw = original.call(this);
+        // Each of these is one request to the compiler, and any of them can be the one it
+        // cannot build a response for. The undefined is cached with the rest, so a type
+        // that panicked once is not asked about again.
+        const raw = surviving(() => original.call(this), undefined);
         result = Array.isArray(raw) ? raw.map(adapt) : adapt(raw);
         cache.set(this, result);
       }

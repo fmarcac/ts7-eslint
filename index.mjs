@@ -31,16 +31,14 @@ export const base = {
   plugins: { "@typescript-eslint": plugin },
 };
 
-/** The rules of one of the plugin's own named configs, its own rules only. */
+/** Preserve core-rule overrides alongside their TypeScript replacements. */
 function rulesOf(name) {
   const config = plugin.configs[name];
   const rules = Array.isArray(config) ? config.at(-1)?.rules : config?.rules;
   if (!rules) {
     throw new Error(`@typescript-eslint has no config named "${name}"`);
   }
-  return Object.fromEntries(
-    Object.entries(rules).filter(([id]) => id.startsWith("@typescript-eslint/")),
-  );
+  return { ...rules };
 }
 
 /**

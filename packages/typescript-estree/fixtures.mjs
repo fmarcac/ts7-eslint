@@ -4,6 +4,21 @@
 
 export const fixtures = [
   {
+    name: "import-export-attributes",
+    ext: "ts",
+    code: `import data from "./data.json" with { type: "json" };
+export { default as data } from "./data.json" with { type: "json" };
+export * from "./data.json" with { type: "json" };
+`,
+  },
+  {
+    name: "export-interleaved-comments",
+    ext: "ts",
+    code: `export /* declaration */ const x = 1;
+export default /* function */ function f() {}
+`,
+  },
+  {
     name: "basic",
     ext: "ts",
     code: `const greeting: string = "hello";

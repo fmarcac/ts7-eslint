@@ -114,16 +114,17 @@ check(
   0,
 );
 
-// Sweep every rule to see how many run end to end. Reported rather than asserted: the
-// remaining failures are the ts-api-utils port, which is still outstanding, and the
-// point of this number is to track it honestly.
+// Every published rule must continue to run end to end.
 const ruleIds = Object.keys(plugin.rules);
 let executed = 0;
 const reasons = new Map();
 const failedRules = [];
 for (const ruleId of ruleIds) {
   try {
-    run(ruleId);
+    const messages = run(ruleId);
+    if (messages.some((message) => message.fatal)) {
+      throw new Error(messages.find((message) => message.fatal).message);
+    }
     executed++;
   } catch (error) {
     const reason = String(error.message).split("\n")[0].slice(0, 70);
@@ -133,6 +134,7 @@ for (const ruleId of ruleIds) {
 }
 
 console.log(`\nrules that executed on TypeScript: ${executed}/${ruleIds.length}`);
+check("all published rules execute", executed, ruleIds.length);
 if (reasons.size > 0) {
   console.log("outstanding failures, by cause:");
   for (const [reason, count] of [...reasons].sort((a, b) => b[1] - a[1])) {

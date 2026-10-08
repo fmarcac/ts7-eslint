@@ -62,6 +62,18 @@ export function shortcutAudit() {
 
 /** Objects already adapted, so repeat crossings are free. */
 const adapted = new WeakSet();
+/** Compiler objects keep their originating checker across project switches. */
+const owners = new WeakMap();
+
+function withChecker(checker, compute) {
+  const previous = currentChecker;
+  currentChecker = checker;
+  try {
+    return compute();
+  } finally {
+    currentChecker = previous;
+  }
+}
 /** Prototype methods already wrapped, so reinstalling does not nest wrappers. */
 const wrappedTypeMethods = new WeakSet();
 /** Instance methods already memoised, for the same reason. */
@@ -113,7 +125,7 @@ function installTypeMethods(prototype) {
   for (const [name, implementation] of Object.entries(TYPE_METHODS)) {
     if (typeof prototype[name] !== "function") {
       define(prototype, name, function (...args) {
-        return implementation(currentChecker, this, ...args);
+        return implementation(owners.get(this) ?? currentChecker, this, ...args);
       });
     }
   }
@@ -267,6 +279,7 @@ function adaptType(type) {
     return type;
   }
   adapted.add(type);
+  owners.set(type, currentChecker);
 
   // Not every type object comes from the same class, so patching the prototype of one
   // sample is not enough. Any type that arrives without the restored surface gets its
@@ -313,7 +326,9 @@ function adaptType(type) {
     defineGetter(type, "typeArguments", function () {
       if (!computed) {
         computed = true;
-        cached = isTypeReference(this) ? currentChecker.getTypeArguments(this) : undefined;
+        cached = isTypeReference(this)
+          ? (owners.get(this) ?? currentChecker).getTypeArguments(this)
+          : undefined;
       }
       return cached;
     });
@@ -397,7 +412,7 @@ function adaptSymbol(symbol) {
 function installSignatureMethods(prototype) {
   if (typeof prototype.getReturnType !== "function") {
     define(prototype, "getReturnType", function () {
-      return currentChecker.getReturnTypeOfSignature(this);
+      return (owners.get(this) ?? currentChecker).getReturnTypeOfSignature(this);
     });
   }
   if (typeof prototype.getDeclaration !== "function") {
@@ -425,6 +440,7 @@ function adaptSignature(signature) {
     return signature;
   }
   adapted.add(signature);
+  owners.set(signature, currentChecker);
 
   if (!signatureMethodsInstalled) {
     const prototype = Object.getPrototypeOf(signature);
@@ -736,8 +752,10 @@ function memoiseInstanceMethods(prototype, names, adapt) {
         // Each of these is one request to the compiler, and any of them can be the one it
         // cannot build a response for. The undefined is cached with the rest, so a type
         // that panicked once is not asked about again.
-        const raw = surviving(() => original.call(this), undefined);
-        result = Array.isArray(raw) ? raw.map(adapt) : adapt(raw);
+        result = withChecker(owners.get(this) ?? currentChecker, () => {
+          const raw = surviving(() => original.call(this), undefined);
+          return Array.isArray(raw) ? raw.map(adapt) : adapt(raw);
+        });
         cache.set(this, result);
       }
       return Array.isArray(result) ? result.slice() : result;
@@ -793,21 +811,33 @@ const SYMBOL_RETURNING = [
 ];
 
 const TYPE_RETURNING = [
+  "getAnyType",
   "getApparentType",
   "getBaseConstraintOfType",
   "getBaseTypeOfLiteralType",
+  "getBaseTypes",
+  "getBigIntType",
+  "getBooleanType",
   "getConstraintOfTypeParameter",
   "getContextualType",
   "getDeclaredTypeOfSymbol",
+  "getESSymbolType",
+  "getNeverType",
   "getNonNullableType",
+  "getNullType",
+  "getNumberType",
   "getParameterType",
   "getReturnTypeOfSignature",
   "getRestTypeOfSignature",
+  "getStringType",
   "getTypeArguments",
   "getTypeAtPosition",
   "getTypeFromTypeNode",
   "getTypeOfSymbol",
   "getTypeOfSymbolAtLocation",
+  "getUndefinedType",
+  "getUnknownType",
+  "getVoidType",
   "getWidenedType",
 ];
 
@@ -835,9 +865,8 @@ function wrapReturning(checker, names, adapt) {
  * The checker in play right now.
  *
  * Prototype patches are shared by every type object in the process, but each type
- * belongs to one project checker. ESLint lints one project at a time, so the active
- * checker is tracked here and read dynamically; capturing one in a closure would make a
- * second project resolve its types against the first one.
+ * belongs to one project checker. Checker calls establish the owner while adapting
+ * their results; prototype methods use that owner even after another project is parsed.
  */
 let currentChecker;
 let prototypesPatched = false;
@@ -848,8 +877,7 @@ const patchedCheckers = new WeakSet();
  * Patch the compiler's object model in place.
  *
  * None of these classes are exported, so each prototype is reached through an instance.
- * ESLint lints one project at a time, so binding to a single checker is sound; the
- * program service resets this whenever the snapshot, and therefore the checker, changes.
+ * Adapted objects retain their own checker rather than the most recently used project.
  */
 export function installTypeCompat(checker) {
   currentChecker = checker;
@@ -1038,6 +1066,17 @@ export function installTypeCompat(checker) {
   wrapReturning(checker, SYMBOL_RETURNING, adaptSymbol);
   wrapReturning(checker, SIGNATURE_RETURNING, adaptSignature);
   wrapReturning(checker, TYPE_RETURNING, adaptType);
+
+  // A caller may retain parserServices from another project. Establish the checker
+  // at every adapted boundary, including cache hits and nested compatibility calls.
+  for (const name of Object.getOwnPropertyNames(checker)) {
+    const method = Object.getOwnPropertyDescriptor(checker, name)?.value;
+    if (typeof method === "function") {
+      define(checker, name, function (...args) {
+        return withChecker(checker, () => method.apply(this, args));
+      });
+    }
+  }
 
   patchedCheckers.add(checker);
 }

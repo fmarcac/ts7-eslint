@@ -15,6 +15,33 @@ import { getProgramService } from "../ts-api/index.mjs";
 import { convertSourceFile } from "../typescript-estree/index.mjs";
 import { analyze } from "@typescript-eslint/scope-manager";
 import { visitorKeys } from "@typescript-eslint/visitor-keys";
+import ts from "../ts-compat/index.cjs";
+
+/** Match upstream's scope globals to the program's selected standard libraries. */
+function getLib(compilerOptions) {
+  if (compilerOptions.lib) {
+    return compilerOptions.lib
+      .map((lib) => /lib\.(.+)\.d\.[cm]?ts$/.exec(lib.toLowerCase())?.[1])
+      .filter(Boolean);
+  }
+  const target = compilerOptions.target ?? ts.ScriptTarget.ES2025;
+  if (target === ts.ScriptTarget.ES2015) {
+    return ["es6"];
+  }
+  if (target === ts.ScriptTarget.ESNext) {
+    return ["esnext.full"];
+  }
+  const name = ts.ScriptTarget[target]?.toLowerCase();
+  return [name && /^es20\d\d$/.test(name) ? `${name}.full` : "lib"];
+}
+
+function throwSyntaxError(diagnostic, sourceFile) {
+  const index = diagnostic.pos ?? 0;
+  const { line, character } = sourceFile.getLineAndCharacterOfPosition(index);
+  const error = new SyntaxError(diagnostic.text);
+  Object.assign(error, { index, lineNumber: line + 1, column: character + 1 });
+  throw error;
+}
 
 /**
  * Find the tsconfig governing a file.
@@ -111,6 +138,9 @@ function createParserServices(service, astMaps, parserOptions) {
 
 export function parseForESLint(code, options = {}) {
   const parserOptions = { ...options };
+  if (!parserOptions.filePath) {
+    throw new Error("The ts7-eslint parser needs a filePath identifying a file in the project.");
+  }
   const { cwd, tsconfigPath } = resolveProject(parserOptions);
   const filePath = resolve(cwd, parserOptions.filePath);
 
@@ -128,6 +158,11 @@ export function parseForESLint(code, options = {}) {
     );
   }
 
+  const diagnostics = service.program.getSyntacticDiagnostics(filePath);
+  if (diagnostics.length > 0) {
+    throwSyntaxError(diagnostics[0], sourceFile);
+  }
+
   const { ast, esTreeNodeToTSNodeMap, tsNodeToESTreeNodeMap } = convertSourceFile(sourceFile);
 
   // ESLint's own option wins over what the file looks like, matching upstream.
@@ -137,9 +172,14 @@ export function parseForESLint(code, options = {}) {
   const scopeManager = analyze(ast, {
     globalReturn: parserOptions.ecmaFeatures?.globalReturn,
     jsxFragmentName:
-      parserOptions.jsxFragmentName ?? compilerOptions.jsxFragmentFactory?.split(".")[0].trim(),
-    jsxPragma: parserOptions.jsxPragma ?? compilerOptions.jsxFactory?.split(".")[0].trim(),
-    lib: parserOptions.lib,
+      parserOptions.jsxFragmentName === undefined
+        ? compilerOptions.jsxFragmentFactory?.split(".")[0].trim()
+        : parserOptions.jsxFragmentName,
+    jsxPragma:
+      parserOptions.jsxPragma === undefined
+        ? compilerOptions.jsxFactory?.split(".")[0].trim()
+        : parserOptions.jsxPragma,
+    lib: parserOptions.lib ?? getLib(compilerOptions),
     sourceType: ast.sourceType,
   });
 

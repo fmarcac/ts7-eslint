@@ -15,6 +15,7 @@ import { ModifierFlags, SyntaxKind } from "typescript/unstable/ast";
 import { tokenToString } from "typescript/unstable/ast/scanner";
 import { xhtmlEntities } from "./jsx-entities.mjs";
 import { getLocFor } from "./node-utils.mjs";
+import { nextTokenAfter } from "../ts-api/token-walk.mjs";
 
 /** Decode XHTML entities, as JSX text and attribute values require. */
 function unescapeEntities(text) {
@@ -155,10 +156,8 @@ export class Converter {
       (m) => m.kind === SyntaxKind.ExportKeyword || m.kind === SyntaxKind.DefaultKeyword,
     );
     if (keywords.length > 0) {
-      let inner = Math.max(...keywords.map((m) => m.end));
-      while (inner < this.ast.text.length && /\s/.test(this.ast.text[inner])) {
-        inner++;
-      }
+      const lastKeyword = keywords.reduce((a, b) => (a.end > b.end ? a : b));
+      const inner = nextTokenAfter(lastKeyword, this.ast).getStart(this.ast);
       declaration.range = [inner, declaration.range[1]];
       declaration.loc = getLocFor(inner, declaration.range[1], this.ast);
     }
@@ -1133,6 +1132,12 @@ export class Converter {
       // ---- modules ----
       case SyntaxKind.ImportDeclaration:
         return this.#importDeclaration(node);
+      case SyntaxKind.ImportAttribute:
+        return this.#node(node, {
+          type: "ImportAttribute",
+          key: this.convert(node.name),
+          value: this.convert(node.value),
+        });
 
       case SyntaxKind.ExportDeclaration:
         return this.#exportDeclaration(node);
@@ -1905,7 +1910,7 @@ export class Converter {
 
     return this.#node(node, {
       type: "ImportDeclaration",
-      attributes: [],
+      attributes: this.#convertAll(node.attributes?.attributes),
       importKind: clause?.isTypeOnly ? "type" : "value",
       phase: null,
       source: this.convert(node.moduleSpecifier),
@@ -1931,7 +1936,7 @@ export class Converter {
     if (!node.exportClause || node.exportClause.kind === SyntaxKind.NamespaceExport) {
       return this.#node(node, {
         type: "ExportAllDeclaration",
-        attributes: [],
+        attributes: this.#convertAll(node.attributes?.attributes),
         exported: node.exportClause ? this.convert(node.exportClause.name) : null,
         exportKind: node.isTypeOnly ? "type" : "value",
         source: this.convert(node.moduleSpecifier),
@@ -1940,7 +1945,7 @@ export class Converter {
 
     return this.#node(node, {
       type: "ExportNamedDeclaration",
-      attributes: [],
+      attributes: this.#convertAll(node.attributes?.attributes),
       declaration: null,
       exportKind: node.isTypeOnly ? "type" : "value",
       source: this.#child(node.moduleSpecifier),

@@ -64,6 +64,6 @@
     "test": "pnpm test:estree && pnpm smoke:ts-api && pnpm spike:hook && pnpm test:parser",
     "test:corpus": "node packages/typescript-estree/differential-corpus.mjs",
     "test:estree": "node packages/typescript-estree/differential.mjs",
-    "test:parser": "node packages/parser/test.mjs"
+    "test:parser": "node packages/parser/test.mjs && node packages/parser/regressions.mjs"
   }
 }

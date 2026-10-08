@@ -44,8 +44,6 @@ class ProgramService {
   #overlay = new Map();
   /** What the server currently believes each file contains. */
   #applied = new Map();
-  /** On-disk content, read at most once per file per run. */
-  #diskCache = new Map();
 
   #snapshot;
   /** The resolved project, and the snapshot it belongs to. */
@@ -115,25 +113,19 @@ class ProgramService {
   }
 
   #readDisk(fileName) {
-    if (!this.#diskCache.has(fileName)) {
-      let content;
-      try {
-        content = readFileSync(fileName, "utf8");
-      } catch {
-        content = undefined;
-      }
-      this.#diskCache.set(fileName, content);
+    try {
+      return readFileSync(fileName, "utf8");
+    } catch {
+      return undefined;
     }
-    return this.#diskCache.get(fileName);
   }
 
   /**
    * Point the server at the text ESLint is actually linting.
    *
    * The common case by far is a plain CLI run over unmodified files, where the text
-   * matches disk and there is nothing to do. Only editors with unsaved buffers and
-   * ESLint processors produce text that differs, and only those pay for a snapshot
-   * update.
+   * matches disk and there is nothing to do. Editors, processors and subsequent
+   * changes to a file's on-disk text require a snapshot update.
    */
   setFileText(fileName, text) {
     if (this.#applied.get(fileName) === text) {
@@ -143,8 +135,9 @@ class ProgramService {
     const matchesDisk = text === this.#readDisk(fileName);
     const hadOverlay = this.#overlay.has(fileName);
 
-    if (matchesDisk && !hadOverlay) {
-      // The server already sees exactly this. No snapshot churn.
+    if (matchesDisk && !hadOverlay && !this.#applied.has(fileName)) {
+      // The first parse sees the text the project loaded. Later text changes must
+      // notify the server even when an editor has already saved them to disk.
       this.#applied.set(fileName, text);
       return;
     }

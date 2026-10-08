@@ -192,7 +192,8 @@ function ourChildrenSignature(sourceFile) {
   const lines = [];
   // TypeScript 7 renamed the EndOfFileToken kind to EndOfFile. Same node, same position,
   // different label, so it is normalised rather than reported as a mismatch.
-  const kindName = (kind) => (SyntaxKind[kind] === "EndOfFile" ? "EndOfFileToken" : SyntaxKind[kind]);
+  const oldNames = { EndOfFile: "EndOfFileToken", ImportAttributes: "AssertClause", ImportAttribute: "AssertEntry" };
+  const kindName = (kind) => oldNames[SyntaxKind[kind]] ?? SyntaxKind[kind];
   (function walk(node, depth) {
     lines.push(`${"  ".repeat(depth)}${kindName(node.kind)}[${node.pos},${node.end}]`);
     for (const child of node.getChildren(sourceFile)) {
